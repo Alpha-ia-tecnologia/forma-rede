@@ -235,10 +235,11 @@ export class AssistenteService {
           modulos: f.modulos,
           atividades: f.atividades.map((a) => ({ ...a, prazo: a.prazo?.toISOString() ?? null })),
           materiais: f.materiais.map((m) => ({ id: m.material.id, titulo: m.material.titulo, tipo: String(m.material.tipo) })),
-          trilha: f.trilha.map((e) => ({
+          // So etapas com material aprovado (o filtro acima); as de modelo sem recurso ficam fora.
+          trilha: f.trilha.flatMap((e) => (e.material && e.materialId ? [{
             ordem: e.ordem, titulo: e.titulo, tipo: String(e.material.tipo), orientacao: e.orientacao,
             duracaoMin: e.duracaoMin, obrigatoria: e.obrigatoria, materialId: e.materialId,
-          })),
+          }] : [])),
         };
       },
       buscarMateriais: async ({ termo, formacaoId }) => {

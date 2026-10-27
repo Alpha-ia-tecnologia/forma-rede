@@ -107,8 +107,8 @@ export default function FormacaoDetalhePage() {
   const mod = modalidade(f.modalidade);
   // O cursista ve a etapa no idioma de quem estuda; quem conduz, o fluxo do processo.
   const etapa = cursista ? etapaParaCursista(f.etapaFluxo) : ETAPA_FLUXO_LABELS[f.etapaFluxo];
-  const naTrilha = new Set(trilha?.etapas.map((e) => e.material.id) ?? []);
-  const pendentesCuradoria = trilha?.etapas.filter((e) => e.material.status === 'EM_REVISAO').length ?? 0;
+  const naTrilha = new Set(trilha?.etapas.flatMap((e) => (e.material ? [e.material.id] : [])) ?? []);
+  const pendentesCuradoria = trilha?.etapas.filter((e) => e.material?.status === 'EM_REVISAO').length ?? 0;
   const outrosMateriais = f.materiais.filter((m) => !naTrilha.has(m.material.id) && (conduz || m.material.status === 'APROVADO'));
 
   const trilhaFormativa = (
@@ -142,7 +142,8 @@ export default function FormacaoDetalhePage() {
       ) : conduz ? (
         <>
           {PREPARACAO.includes(f.etapaFluxo) ? (
-            <PreparacaoFormacao formacaoId={id} modulos={f.modulos.length} turmas={f.turmas} etapasTrilha={trilha ? trilha.etapas.length : null}
+            <PreparacaoFormacao formacaoId={id} modulos={f.modulos.length} turmas={f.turmas} etapasTrilha={trilha ? trilha.etapas.filter((e) => e.material).length : null}
+              etapasADefinir={trilha ? trilha.etapas.filter((e) => !e.material).length : 0}
               pode={pode} aoMudar={() => { carregarDetalhe(); carregarAcompanhamento(); }} />
           ) : acomp ? (
             <AtencaoConducao a={acomp} pendentesCuradoria={pendentesCuradoria} podeRegistrar={pode('frequencia:registrar')} aoAvaliar={avaliar}

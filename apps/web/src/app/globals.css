@@ -1329,6 +1329,39 @@ fieldset.resp-pergunta > legend + * { clear: both; }
 .trilha-retorno { min-height: 1.5em; margin: 6px 0 0; color: var(--ink-soft); font-size: var(--text-xs); }
 .trilha-retorno[data-ok='true'] { color: var(--green); }
 .trilha-form-acoes { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.trilha-form-lead { margin: 4px 0 0; max-width: 68ch; color: var(--ink-soft); font-size: var(--text-sm); line-height: 1.5; }
+.trilha-head-acoes, .trilha-vazia-acoes { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.trilha-vazia-acoes { justify-content: center; margin-top: 8px; }
+
+/* Modelos de trilha: a escolha em linhas (radio), com a previa das etapas do escolhido */
+.modelos { display: grid; gap: var(--space-2); min-width: 0; margin: 0; padding: 0; border: 0; }
+.modelo-opcao {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 12px; align-items: start;
+  padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-xl); background: var(--paper); cursor: pointer;
+}
+.modelo-opcao:hover { border-color: var(--line-strong); }
+.modelo-opcao:has(input:checked) { border-color: var(--brand); background: var(--brand-faint); box-shadow: inset 0 0 0 1px var(--brand); }
+.modelo-opcao:has(input:focus-visible) { outline: 2px solid var(--brand-strong); outline-offset: 2px; }
+.modelo-opcao input { grid-row: span 3; width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--brand-strong); }
+.modelo-nome { font-size: var(--text-md); font-weight: 600; line-height: 1.35; }
+.modelo-resumo { max-width: 72ch; color: var(--ink-soft); font-size: var(--text-sm); line-height: 1.5; }
+.modelo-meta { color: var(--ink-soft); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.modelo-previa { display: grid; gap: 10px; }
+.modelo-previa .label { margin: 0; }
+.modelo-etapas { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.modelo-etapas li { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.modelo-etapas .trilha-tipo { width: 32px; height: 32px; }
+.modelo-etapa-texto { display: grid; min-width: 0; font-size: var(--text-sm); }
+.modelo-etapa-texto strong { font-weight: 600; overflow-wrap: anywhere; }
+.modelo-etapa-meta { color: var(--ink-soft); font-size: var(--text-xs); }
+/* Trecho de exemplo a trocar: sublinhado tracejado sobre fundo neutro */
+.marcador {
+  padding: 0 3px; border-radius: 4px; background: var(--surface-muted); color: var(--ink-soft);
+  text-decoration: underline dashed var(--line-strong); text-decoration-thickness: 1px; text-underline-offset: 3px;
+}
+/* Etapa de modelo ainda sem recurso: tracejada como rascunho, numero apagado */
+.trilha-etapa[data-estado='modelo'] .trilha-marca { background: var(--paper); box-shadow: none; outline: 1.5px dashed var(--line-strong); outline-offset: -1.5px; color: var(--ink-soft); }
+.trilha-etapa[data-estado='modelo'] .trilha-card { background: color-mix(in srgb, var(--paper-raised) 60%, transparent); outline: 1.5px dashed var(--dash-line); outline-offset: -1.5px; }
 
 @media (max-width: 640px) {
   .trilha-modulo { grid-template-columns: 32px minmax(0, 1fr); gap: 0 10px; }

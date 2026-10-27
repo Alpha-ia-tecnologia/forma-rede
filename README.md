@@ -117,8 +117,8 @@ Um dominio, sem CORS.
 
 1. No projeto do Easypanel, crie um servico **App** ligado a este repositorio (branch `main`).
 2. Em Build, escolha **Dockerfile** e deixe os padroes: Build Path `/` e arquivo `Dockerfile`.
-3. Em Environment, cole o `.env.easypanel` (fora do git, na maquina de quem faz o deploy)
-   ou preencha a tabela abaixo.
+3. Em Environment, cole o `.env` da raiz (fora do git: na maquina de quem faz o deploy ele
+   guarda os valores de producao) ou preencha a tabela abaixo.
 4. Em Domains, aponte o dominio para a porta **3000**.
 5. Clique em Deploy (salvar nao dispara o build).
 
@@ -358,9 +358,19 @@ obrigatória ou opcional; o cursista estuda na própria página e marca o que co
 |--------|------|--------|
 | GET | `/formacoes/:id/trilha` | formacao:read (cursista vê só etapas aprovadas e o próprio progresso; quem edita vê tudo e quantos concluíram) |
 | POST | `/formacoes/:id/trilha/etapas` | trilha:editar — `materialId` do acervo (aprovado) **ou** `recurso` novo `{tipo, titulo, url}` |
+| POST | `/formacoes/:id/trilha/modelo` | trilha:editar — `{modeloId}`: as etapas do modelo entram no fim da trilha, sem recurso |
+| PUT | `/trilha/etapas/:etapaId/recurso` | trilha:editar — mesmos campos de criar: dá à etapa do modelo (ou à de material recusado) o recurso e os textos |
 | PUT / DELETE | `/trilha/etapas/:etapaId` | trilha:editar |
 | POST | `/trilha/etapas/:etapaId/mover` | trilha:editar — `{direcao: "subir" \| "descer"}` |
 | POST | `/trilha/etapas/:etapaId/conclusao` | participante:area — `{concluida}`, só inscritos numa turma da formação |
+
+**Modelos prontos** (`MODELOS_TRILHA` no `contracts`): "Percurso entre dois encontros", "Ciclo de
+prática: ver, planejar, aplicar e refletir", "Estudo de um documento curricular" e "Acolhida e
+diagnóstico". Cada etapa traz o tipo de recurso previsto, uma orientação e o tempo, com trechos
+entre colchetes para trocar (`[tema do encontro]`). As etapas entram sem material (`material_id`
+vazio, `tipo_previsto`) e só quem edita as vê; em cada uma, "Substituir conteúdo" troca título,
+orientação e recurso de uma vez (o título não salva com colchetes), e só então ela chega aos
+cursistas. O checklist "Preparar a formação" só dá a trilha por pronta sem etapas a definir.
 
 Todo recurso é um `Material`: o recurso novo entra no acervo **em revisão** (tag `trilha`) e
 só aparece para os cursistas depois que a curadoria aprova (`material:aprovar`, que pode

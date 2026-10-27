@@ -21,12 +21,14 @@ interface Passo {
   acao: ((principal: boolean) => ReactNode) | null;
 }
 
-export function PreparacaoFormacao({ formacaoId, modulos, turmas, etapasTrilha, pode, aoMudar }: {
+export function PreparacaoFormacao({ formacaoId, modulos, turmas, etapasTrilha, etapasADefinir = 0, pode, aoMudar }: {
   formacaoId: string;
   modulos: number;
   turmas: { id: string; nome: string; _count: { encontros: number } }[];
-  /** Etapas da trilha (null enquanto a trilha carrega). */
+  /** Etapas da trilha com recurso (null enquanto a trilha carrega). */
   etapasTrilha: number | null;
+  /** Etapas de modelo que ainda nao receberam recurso (os cursistas nao as veem). */
+  etapasADefinir?: number;
   pode: (p: string) => boolean;
   aoMudar: () => void;
 }) {
@@ -59,10 +61,14 @@ export function PreparacaoFormacao({ formacaoId, modulos, turmas, etapasTrilha, 
         : null,
     },
     {
-      chave: 'trilha', titulo: 'Trilha formativa', ok: (etapasTrilha ?? 0) > 0,
-      valor: etapasTrilha ? plural(etapasTrilha, 'etapa', 'etapas') : 'vazia',
-      dica: etapasTrilha ? undefined : 'Vídeos, documentos e podcasts em ordem, para estudar entre os encontros.',
-      acao: pode('trilha:editar') ? (p) => <a className={botao(p)} href="#trilha">{etapasTrilha ? 'Ver a trilha' : 'Montar a trilha'}</a> : null,
+      chave: 'trilha', titulo: 'Trilha formativa', ok: (etapasTrilha ?? 0) > 0 && etapasADefinir === 0,
+      valor: [etapasTrilha ? plural(etapasTrilha, 'etapa', 'etapas') : '', etapasADefinir ? `${plural(etapasADefinir, 'etapa', 'etapas')} do modelo a definir` : '']
+        .filter(Boolean).join(' · ') || 'vazia',
+      dica: etapasADefinir ? 'Em cada etapa do modelo, troque o texto de exemplo e escolha o recurso; até lá, os cursistas não a veem.'
+        : etapasTrilha ? undefined : 'Comece por um modelo pronto ou monte etapa por etapa: vídeos, documentos e podcasts em ordem.',
+      acao: pode('trilha:editar')
+        ? (p) => <a className={botao(p)} href="#trilha">{etapasADefinir ? 'Completar a trilha' : etapasTrilha ? 'Ver a trilha' : 'Montar a trilha'}</a>
+        : null,
     },
     {
       chave: 'turma', titulo: 'Turma', ok: turmas.length > 0,

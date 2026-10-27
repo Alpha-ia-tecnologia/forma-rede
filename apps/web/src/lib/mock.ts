@@ -5,7 +5,7 @@ import {
   type AcompanhamentoFormacao, type AcompanhamentoFrequencia, type AuthUser, type EntregaParaAvaliar, type EntregaStatus,
   type EtapaTrilha, type EventoAssistenteStream, type FrequenciaProfessor, type MaterialTipo, type MinhaFormacao,
   type PainelConducao, type ParticipacaoFormacao, chamadaPendente,
-  ETAPA_FLUXO_LABELS, SITUACAO_FREQUENCIA_LABELS, type LinhaRelatorioConclusao, type LinhaRelatorioFrequencia,
+  ETAPA_FLUXO_LABELS, MODELOS_TRILHA, SITUACAO_FREQUENCIA_LABELS, type LinhaRelatorioConclusao, type LinhaRelatorioFrequencia,
   type Planejamento, type PlanoAprovado, type PlanoFormativoConteudo, type Role, type TrilhaFormacao, type TurnoAssistente,
 } from '@formarede/contracts';
 
@@ -112,7 +112,8 @@ const materiais: MaterialDemo[] = [
 
 // Trilha formativa da f1. Paula (professora, inscricao i1) ja concluiu as duas primeiras.
 interface EtapaDemo {
-  id: string; formacaoId: string; materialId: string; moduloId: string | null; ordem: number;
+  /** materialId null: etapa de modelo ainda sem recurso (tipoPrevisto diz o tipo). */
+  id: string; formacaoId: string; materialId: string | null; tipoPrevisto?: string | null; moduloId: string | null; ordem: number;
   titulo: string; orientacao: string | null; duracaoMin: number | null; obrigatoria: boolean;
   /** Outros cursistas que concluiram (alem da pessoa logada). */
   outrosConcluintes: number;
@@ -142,18 +143,19 @@ function trilhaDe(formacaoId: string): TrilhaFormacao {
     .filter((e) => e.formacaoId === formacaoId)
     .sort((a, b) => a.ordem - b.ordem)
     .flatMap((e) => {
-      const m = materiais.find((x) => x.id === e.materialId);
-      if (!m || (!editor && m.status !== 'APROVADO')) return [];
+      const m = e.materialId ? materiais.find((x) => x.id === e.materialId) : undefined;
+      if ((e.materialId && !m) || (!editor && m?.status !== 'APROVADO')) return [];
       const mod = modulos.find((x) => x.id === e.moduloId);
       return [{
         id: e.id, ordem: e.ordem, titulo: e.titulo, orientacao: e.orientacao, duracaoMin: e.duracaoMin, obrigatoria: e.obrigatoria,
         modulo: mod ? { id: mod.id, titulo: mod.titulo } : null,
-        material: { id: m.id, titulo: m.titulo, tipo: m.tipo as MaterialTipo, url: m.url, descricao: m.descricao, autoria: m.autoria, licenca: m.licenca, status: m.status },
+        material: m ? { id: m.id, titulo: m.titulo, tipo: m.tipo as MaterialTipo, url: m.url, descricao: m.descricao, autoria: m.autoria, licenca: m.licenca, status: m.status } : null,
+        tipoPrevisto: m ? null : ((e.tipoPrevisto ?? null) as MaterialTipo | null),
         concluida: cursista && concluidasDemo.has(e.id),
         concluintes: editor ? e.outrosConcluintes + (concluidasDemo.has(e.id) ? 1 : 0) : null,
       }];
     });
-  const obrigatorias = etapas.filter((e) => e.obrigatoria && e.material.status === 'APROVADO');
+  const obrigatorias = etapas.filter((e) => e.obrigatoria && e.material?.status === 'APROVADO');
   return {
     formacaoId, podeEditar: editor, inscricaoId: cursista ? 'i1' : null,
     totalCursistas: editor ? (formacaoId === 'f1' ? 24 : 0) : null,
@@ -166,6 +168,26 @@ function etapaDemo(id: string): EtapaDemo {
   const e = trilhaDemo.find((x) => x.id === id);
   if (!e) throw new Error('Etapa não encontrada.');
   return e;
+}
+
+/** Material da etapa: aprovado do acervo ou recurso novo (EM_REVISAO), que entra na colecao da formacao. */
+function materialDaTrilha(formacaoId: string, body: Record<string, unknown> | undefined): MaterialDemo {
+  const f = formacoes.find((x) => x.id === formacaoId);
+  let m: MaterialDemo | undefined;
+  if (body?.materialId) {
+    m = materiais.find((x) => x.id === body.materialId && x.status === 'APROVADO');
+    if (!m) throw new Error('Escolha um material aprovado do acervo.');
+  } else {
+    const r = body?.recurso as { tipo: string; titulo: string; url: string; autoria?: string; licenca?: string };
+    m = { id: 'mat' + (materiais.length + 1), titulo: r.titulo, tipo: r.tipo, url: r.url, descricao: null, autoria: r.autoria || null, licenca: r.licenca || null, tags: ['trilha'], status: 'EM_REVISAO', formacoes: [] };
+    materiais.push(m);
+  }
+  // Entra na colecao da formacao, como no backend (alimenta o copiloto e o assistente).
+  if (f && !m.formacoes.some((x) => x.formacao.id === formacaoId)) {
+    m.formacoes.push({ formacao: { id: formacaoId, titulo: f.titulo as string } });
+    (f.materiais as unknown[]).push({ id: 'mf-' + m.id, material: { id: m.id, titulo: m.titulo, tipo: m.tipo, status: m.status } });
+  }
+  return m;
 }
 
 function resequenciar(formacaoId: string) {
@@ -939,21 +961,7 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
   const novaEtapa = p.match(/^\/formacoes\/([^/]+)\/trilha\/etapas$/);
   if (novaEtapa && method === 'POST') {
     const formacaoId = novaEtapa[1] as string;
-    const f = formacoes.find((x) => x.id === formacaoId);
-    let m: MaterialDemo | undefined;
-    if (body?.materialId) {
-      m = materiais.find((x) => x.id === body.materialId && x.status === 'APROVADO');
-      if (!m) throw new Error('Escolha um material aprovado do acervo.');
-    } else {
-      const r = body?.recurso as { tipo: string; titulo: string; url: string; autoria?: string; licenca?: string };
-      m = { id: 'mat' + (materiais.length + 1), titulo: r.titulo, tipo: r.tipo, url: r.url, descricao: null, autoria: r.autoria || null, licenca: r.licenca || null, tags: ['trilha'], status: 'EM_REVISAO', formacoes: [] };
-      materiais.push(m);
-    }
-    // Entra na colecao da formacao, como no backend (alimenta o copiloto e o assistente).
-    if (f && !m.formacoes.some((x) => x.formacao.id === formacaoId)) {
-      m.formacoes.push({ formacao: { id: formacaoId, titulo: f.titulo as string } });
-      (f.materiais as unknown[]).push({ id: 'mf-' + m.id, material: { id: m.id, titulo: m.titulo, tipo: m.tipo, status: m.status } });
-    }
+    const m = materialDaTrilha(formacaoId, body);
     const ordem = Math.max(0, ...trilhaDemo.filter((e) => e.formacaoId === formacaoId).map((e) => e.ordem)) + 1;
     trilhaDemo.push({
       id: 'et' + Date.now(), formacaoId, materialId: m.id, moduloId: (body?.moduloId as string) || null, ordem,
@@ -962,7 +970,19 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
     });
     return as(trilhaDe(formacaoId));
   }
-  const etapaRota = p.match(/^\/trilha\/etapas\/([^/]+)(?:\/(mover|conclusao))?$/);
+  const modeloTrilha = p.match(/^\/formacoes\/([^/]+)\/trilha\/modelo$/);
+  if (modeloTrilha && method === 'POST') {
+    const formacaoId = modeloTrilha[1] as string;
+    const modelo = MODELOS_TRILHA.find((x) => x.id === body?.modeloId);
+    if (!modelo) throw new Error('Escolha um dos modelos de trilha.');
+    const ultima = Math.max(0, ...trilhaDemo.filter((e) => e.formacaoId === formacaoId).map((e) => e.ordem));
+    modelo.etapas.forEach((e, i) => trilhaDemo.push({
+      id: `et${Date.now()}-${i}`, formacaoId, materialId: null, tipoPrevisto: e.tipo, moduloId: null, ordem: ultima + i + 1,
+      titulo: e.titulo, orientacao: e.orientacao, duracaoMin: e.duracaoMin, obrigatoria: e.obrigatoria, outrosConcluintes: 0,
+    }));
+    return as(trilhaDe(formacaoId));
+  }
+  const etapaRota = p.match(/^\/trilha\/etapas\/([^/]+)(?:\/(mover|conclusao|recurso))?$/);
   if (etapaRota) {
     const e = etapaDemo(etapaRota[1] as string);
     const acao = etapaRota[2];
@@ -971,6 +991,15 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
       const i = irmas.indexOf(e);
       const viz = irmas[body?.direcao === 'subir' ? i - 1 : i + 1];
       if (viz) [e.ordem, viz.ordem] = [viz.ordem, e.ordem];
+    } else if (acao === 'recurso') {
+      const m = materialDaTrilha(e.formacaoId, body);
+      e.materialId = m.id;
+      e.tipoPrevisto = null;
+      if (body?.titulo) e.titulo = body.titulo as string;
+      if (body?.orientacao !== undefined) e.orientacao = (body.orientacao as string) || null;
+      if (body?.duracaoMin !== undefined) e.duracaoMin = body.duracaoMin as number | null;
+      if (body?.moduloId !== undefined) e.moduloId = body.moduloId as string | null;
+      e.obrigatoria = body?.obrigatoria !== false;
     } else if (acao === 'conclusao') {
       if (body?.concluida) concluidasDemo.add(e.id); else concluidasDemo.delete(e.id);
     } else if (method === 'PUT') {

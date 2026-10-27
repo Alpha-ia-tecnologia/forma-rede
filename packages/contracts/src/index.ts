@@ -692,6 +692,91 @@ export type MoverEtapaTrilhaDto = z.infer<typeof moverEtapaTrilhaSchema>;
 export const concluirEtapaTrilhaSchema = z.object({ concluida: z.boolean() });
 export type ConcluirEtapaTrilhaDto = z.infer<typeof concluirEtapaTrilhaSchema>;
 
+/** Etapa que veio de um modelo recebe o recurso e os textos de quem monta a trilha (mesmos campos de criar). */
+export const substituirEtapaTrilhaSchema = criarEtapaTrilhaSchema;
+export type SubstituirEtapaTrilhaDto = CriarEtapaTrilhaDto;
+
+/**
+ * Modelo pronto de trilha: o percurso ja estruturado, com o tipo de recurso de cada etapa,
+ * a orientacao e o tempo. Os trechos entre colchetes sao para trocar pelo conteudo da
+ * formacao; a etapa so chega aos cursistas depois de receber o recurso.
+ */
+export interface ModeloTrilha {
+  id: string;
+  nome: string;
+  /** Para que serve, em uma frase. */
+  resumo: string;
+  etapas: { titulo: string; tipo: TipoRecursoTrilha; orientacao: string; duracaoMin: number; obrigatoria: boolean }[];
+}
+
+export const MODELOS_TRILHA: readonly ModeloTrilha[] = [
+  {
+    id: 'entre-encontros',
+    nome: 'Percurso entre dois encontros',
+    resumo: 'Prepara o próximo encontro: um vídeo para abrir o tema, uma leitura de base, uma escuta opcional e uma prática com a turma.',
+    etapas: [
+      { tipo: 'VIDEO', titulo: 'Vídeo de abertura: [tema do encontro]', duracaoMin: 15, obrigatoria: true,
+        orientacao: 'Assista antes do encontro e anote uma pergunta que o vídeo deixou para você.' },
+      { tipo: 'DOCUMENTO', titulo: 'Leitura de base: [texto de referência]', duracaoMin: 30, obrigatoria: true,
+        orientacao: 'Leia e destaque dois trechos que conversam com a realidade da sua turma.' },
+      { tipo: 'PODCAST', titulo: 'Para ouvir: [experiência de outra escola]', duracaoMin: 20, obrigatoria: false,
+        orientacao: 'Ouça no trajeto ou no planejamento e traga para o encontro uma ideia que você gostaria de testar.' },
+      { tipo: 'LINK', titulo: 'Na sala de aula: [proposta para aplicar]', duracaoMin: 30, obrigatoria: true,
+        orientacao: 'Aplique a proposta com a turma e registre o que aconteceu (foto, anotação ou produção dos alunos) para compartilhar no encontro.' },
+    ],
+  },
+  {
+    id: 'ciclo-pratica',
+    nome: 'Ciclo de prática: ver, planejar, aplicar e refletir',
+    resumo: 'Uma estratégia de ensino do começo ao fim: a prática filmada, o fundamento, o planejamento, a aplicação e a reflexão.',
+    etapas: [
+      { tipo: 'VIDEO', titulo: 'Ver a prática: [estratégia em sala de aula]', duracaoMin: 15, obrigatoria: true,
+        orientacao: 'Observe o que a professora faz antes, durante e depois da atividade, e como as crianças respondem.' },
+      { tipo: 'DOCUMENTO', titulo: 'Por que funciona: [texto sobre a estratégia]', duracaoMin: 20, obrigatoria: true,
+        orientacao: 'Leia para entender o fundamento da estratégia e anote o que você já faz parecido.' },
+      { tipo: 'DOCUMENTO', titulo: 'Roteiro de planejamento: [nome do roteiro]', duracaoMin: 20, obrigatoria: true,
+        orientacao: 'Use o roteiro para planejar a aplicação com a sua turma: objetivo, tempo, materiais e como vai observar a aprendizagem.' },
+      { tipo: 'LINK', titulo: 'Aplicar e registrar: [onde enviar o registro]', duracaoMin: 45, obrigatoria: true,
+        orientacao: 'Aplique com a turma e registre evidências da aprendizagem dos alunos para levar ao próximo encontro.' },
+      { tipo: 'PODCAST', titulo: 'Para refletir: [conversa sobre a prática]', duracaoMin: 20, obrigatoria: false,
+        orientacao: 'Ouça depois de aplicar e compare com o que aconteceu na sua sala.' },
+    ],
+  },
+  {
+    id: 'documento-curricular',
+    nome: 'Estudo de um documento curricular',
+    resumo: 'Leitura guiada da BNCC ou do currículo da rede, com um exemplo de planejamento e o ajuste de uma aula real.',
+    etapas: [
+      { tipo: 'DOCUMENTO', titulo: 'Documento de referência: [BNCC ou currículo da rede]', duracaoMin: 40, obrigatoria: true,
+        orientacao: 'Leia a parte indicada pela formação e marque as habilidades que a sua turma já trabalha.' },
+      { tipo: 'VIDEO', titulo: 'Explicação comentada: [vídeo sobre o documento]', duracaoMin: 20, obrigatoria: true,
+        orientacao: 'Assista para tirar as dúvidas da leitura e anote o que ainda ficou confuso.' },
+      { tipo: 'DOCUMENTO', titulo: 'Exemplo de planejamento: [ano ou etapa]', duracaoMin: 25, obrigatoria: false,
+        orientacao: 'Compare com o seu planejamento: o que você manteria e o que ajustaria?' },
+      { tipo: 'LINK', titulo: 'Seu planejamento: [onde registrar a aula ajustada]', duracaoMin: 30, obrigatoria: true,
+        orientacao: 'Ajuste uma aula da próxima semana usando o documento e traga o planejamento para o encontro.' },
+    ],
+  },
+  {
+    id: 'acolhida',
+    nome: 'Acolhida e diagnóstico',
+    resumo: 'Para o início da formação: boas-vindas da equipe, o plano da formação e um questionário que orienta os encontros.',
+    etapas: [
+      { tipo: 'VIDEO', titulo: 'Boas-vindas: [equipe de formação]', duracaoMin: 10, obrigatoria: true,
+        orientacao: 'Conheça o percurso, os encontros e o que se espera de cada cursista.' },
+      { tipo: 'DOCUMENTO', titulo: 'Plano da formação: [nome da formação]', duracaoMin: 15, obrigatoria: true,
+        orientacao: 'Leia os objetivos e o calendário e anote o que você mais quer aprender.' },
+      { tipo: 'LINK', titulo: 'Questionário de diagnóstico: [nome do questionário]', duracaoMin: 15, obrigatoria: true,
+        orientacao: 'Responda antes do primeiro encontro: as respostas ajudam a equipe a ajustar a formação à sua realidade.' },
+    ],
+  },
+];
+
+export const aplicarModeloTrilhaSchema = z.object({
+  modeloId: z.string().refine((id) => MODELOS_TRILHA.some((m) => m.id === id), 'Escolha um dos modelos de trilha.'),
+});
+export type AplicarModeloTrilhaDto = z.infer<typeof aplicarModeloTrilhaSchema>;
+
 export interface EtapaTrilha {
   id: string;
   ordem: number;
@@ -700,10 +785,13 @@ export interface EtapaTrilha {
   duracaoMin: number | null;
   obrigatoria: boolean;
   modulo: { id: string; titulo: string } | null;
+  /** null na etapa de um modelo que ainda nao recebeu recurso (so quem edita a ve). */
   material: {
     id: string; titulo: string; tipo: MaterialTipo; url: string | null; descricao: string | null;
     autoria: string | null; licenca: string | null; status: string;
-  };
+  } | null;
+  /** Etapa de modelo sem recurso: o tipo previsto (video, documento...). */
+  tipoPrevisto: MaterialTipo | null;
   /** Cursista: se ele ja concluiu. */
   concluida: boolean;
   /** Quem edita: quantos cursistas concluiram. */

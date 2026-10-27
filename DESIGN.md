@@ -86,6 +86,11 @@ Caixa de frase em títulos, botões e selos.
 - Status com um vocabulário só (`MATERIAL_STATUS_LABELS`, `ENTREGA_STATUS_LABELS`, `situacaoEncontro`
   no `contracts`); plurais e decimais por `lib/texto.ts` (`plural`, `decimal`), datas por `lib/datas.ts`.
 - `.empty-state` com borda tracejada; `.hatch` (textura a 120°) em barras, roscas e medidores.
+- Modelo pronto (trilha): escolhido em linhas de opção (`.modelo-opcao`, a escolhida em `brand-faint` com borda
+  amarela) com a prévia das etapas logo abaixo. O texto de exemplo marca o que trocar com `.marcador` (trecho entre
+  colchetes, fundo neutro e sublinhado tracejado). A etapa ainda por preencher é tracejada como o rascunho, com o
+  número apagado e o selo "Do modelo"; "Substituir conteúdo" abre o formulário no lugar do cartão, já preenchido,
+  e só a primeira etapa por preencher tem o botão principal.
 - Páginas de trabalho (ex.: formação): seções em quadro `.fsec` (cinza, 30 px) com células brancas
   `.fcell`/`.fitem`; a primeira seção responde "o que é com você agora" para o papel de quem abre.
   Estado pela forma, não só pela cor: marca vazia (pendente), cheia com visto (feito), ampulheta

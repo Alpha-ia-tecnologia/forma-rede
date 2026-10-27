@@ -799,7 +799,10 @@ model TrilhaEtapa {
   tenantId    String   @map("tenant_id") @db.Uuid
   formacaoId  String   @map("formacao_id") @db.Uuid
   moduloId    String?  @map("modulo_id") @db.Uuid
-  materialId  String   @map("material_id") @db.Uuid
+  /// Vazio na etapa que veio de um modelo e ainda nao tem recurso (os cursistas nao a veem).
+  materialId  String?  @map("material_id") @db.Uuid
+  /// Tipo de recurso que o modelo previu para a etapa ainda sem material.
+  tipoPrevisto MaterialTipo? @map("tipo_previsto")
   ordem       Int
   titulo      String
   orientacao  String?
@@ -811,7 +814,7 @@ model TrilhaEtapa {
   tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   formacao  Formacao          @relation(fields: [formacaoId], references: [id], onDelete: Cascade)
   modulo    ModuloFormacao?   @relation(fields: [moduloId], references: [id], onDelete: SetNull)
-  material  Material          @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  material  Material?         @relation(fields: [materialId], references: [id], onDelete: Cascade)
   progresso TrilhaProgresso[]
 
   @@index([tenantId, formacaoId, ordem])

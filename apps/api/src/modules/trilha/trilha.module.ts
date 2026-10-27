@@ -3,15 +3,18 @@
 // EM_REVISAO e so os APROVADOS aparecem para os cursistas. O material entra tambem na
 // colecao da formacao (MaterialFormacao), que alimenta o copiloto e o assistente.
 // O cursista marca etapas como concluidas; quem edita ve quantos concluiram.
+// Modelos prontos (MODELOS_TRILHA) criam etapas sem recurso, com textos de exemplo; quem
+// edita substitui titulo, orientacao e recurso, e so entao a etapa chega aos cursistas.
 import {
   BadRequestException, Body, Controller, Delete, Get, Injectable, Module, NotFoundException,
   Param, Post, Put,
 } from '@nestjs/common';
 import { forTenant } from '@formarede/db';
 import {
-  AtualizarEtapaTrilhaDto, atualizarEtapaTrilhaSchema, AuthUser, ConcluirEtapaTrilhaDto,
-  concluirEtapaTrilhaSchema, CriarEtapaTrilhaDto, criarEtapaTrilhaSchema, EtapaTrilha,
-  MaterialTipo, MoverEtapaTrilhaDto, moverEtapaTrilhaSchema, TrilhaFormacao,
+  AplicarModeloTrilhaDto, aplicarModeloTrilhaSchema, AtualizarEtapaTrilhaDto, atualizarEtapaTrilhaSchema,
+  AuthUser, ConcluirEtapaTrilhaDto, concluirEtapaTrilhaSchema, CriarEtapaTrilhaDto, criarEtapaTrilhaSchema,
+  EtapaTrilha, MaterialTipo, MODELOS_TRILHA, MoverEtapaTrilhaDto, moverEtapaTrilhaSchema,
+  SubstituirEtapaTrilhaDto, substituirEtapaTrilhaSchema, TrilhaFormacao,
 } from '@formarede/contracts';
 import { CurrentUser, RequirePermissions } from '../../common/security';
 import { ZodValidationPipe } from '../../common/http';
@@ -75,11 +78,12 @@ export class TrilhaService {
     const lista: EtapaTrilha[] = etapas.map((e) => ({
       id: e.id, ordem: e.ordem, titulo: e.titulo, orientacao: e.orientacao, duracaoMin: e.duracaoMin,
       obrigatoria: e.obrigatoria, modulo: e.modulo,
-      material: { ...e.material, tipo: e.material.tipo as MaterialTipo, status: String(e.material.status) },
+      material: e.material ? { ...e.material, tipo: e.material.tipo as MaterialTipo, status: String(e.material.status) } : null,
+      tipoPrevisto: e.material ? null : (e.tipoPrevisto as MaterialTipo | null),
       concluida: concluidas.has(e.id),
       concluintes: editor ? e._count.progresso : null,
     }));
-    const obrigatorias = lista.filter((e) => e.obrigatoria && e.material.status === 'APROVADO');
+    const obrigatorias = lista.filter((e) => e.obrigatoria && e.material?.status === 'APROVADO');
     return {
       formacaoId,
       podeEditar: editor,
@@ -90,11 +94,12 @@ export class TrilhaService {
     };
   }
 
-  async criar(user: AuthUser, formacaoId: string, dto: CriarEtapaTrilhaDto): Promise<TrilhaFormacao> {
-    await this.formacaoExiste(user.tenantId, formacaoId);
-    await this.validarModulo(user.tenantId, formacaoId, dto.moduloId);
+  /**
+   * Material da etapa: um aprovado do acervo ou um recurso novo, que entra EM_REVISAO.
+   * Nos dois casos ele passa a fazer parte da colecao da formacao.
+   */
+  private async resolverMaterial(user: AuthUser, formacaoId: string, dto: CriarEtapaTrilhaDto) {
     const db = forTenant(user.tenantId);
-
     let material: { id: string; titulo: string };
     if (dto.materialId) {
       const m = await db.material.findFirst({ where: { id: dto.materialId, status: 'APROVADO' }, select: { id: true, titulo: true } });
@@ -119,6 +124,14 @@ export class TrilhaService {
       update: {},
       create: { tenantId: user.tenantId, materialId: material.id, formacaoId },
     });
+    return material;
+  }
+
+  async criar(user: AuthUser, formacaoId: string, dto: CriarEtapaTrilhaDto): Promise<TrilhaFormacao> {
+    await this.formacaoExiste(user.tenantId, formacaoId);
+    await this.validarModulo(user.tenantId, formacaoId, dto.moduloId);
+    const db = forTenant(user.tenantId);
+    const material = await this.resolverMaterial(user, formacaoId, dto);
     const ultima = await db.trilhaEtapa.aggregate({ where: { formacaoId }, _max: { ordem: true } });
     const etapa = await db.trilhaEtapa.create({
       data: {
@@ -129,6 +142,43 @@ export class TrilhaService {
     });
     await this.audit.record({ action: 'CREATE', entity: 'trilha_etapa', entityId: etapa.id, tenantId: user.tenantId, userId: user.id, metadata: { formacaoId } });
     return this.obter(user, formacaoId);
+  }
+
+  /** Poe as etapas do modelo no fim da trilha, sem recurso (so quem edita as ve). */
+  async aplicarModelo(user: AuthUser, formacaoId: string, dto: AplicarModeloTrilhaDto): Promise<TrilhaFormacao> {
+    await this.formacaoExiste(user.tenantId, formacaoId);
+    const modelo = MODELOS_TRILHA.find((m) => m.id === dto.modeloId);
+    if (!modelo) throw new BadRequestException('Escolha um dos modelos de trilha.');
+    const db = forTenant(user.tenantId);
+    const ultima = (await db.trilhaEtapa.aggregate({ where: { formacaoId }, _max: { ordem: true } }))._max.ordem ?? 0;
+    await db.trilhaEtapa.createMany({
+      data: modelo.etapas.map((e, i) => ({
+        tenantId: user.tenantId, formacaoId, ordem: ultima + i + 1, titulo: e.titulo, orientacao: e.orientacao,
+        duracaoMin: e.duracaoMin, obrigatoria: e.obrigatoria, tipoPrevisto: e.tipo, materialId: null,
+      })),
+    });
+    await this.audit.record({ action: 'UPDATE', entity: 'formacao', entityId: formacaoId, tenantId: user.tenantId, userId: user.id, metadata: { trilha: 'modelo', modelo: modelo.id, etapas: modelo.etapas.length } });
+    return this.obter(user, formacaoId);
+  }
+
+  /** Troca o recurso da etapa (a do modelo recebe o primeiro) e, junto, os textos dela. */
+  async substituir(user: AuthUser, etapaId: string, dto: SubstituirEtapaTrilhaDto): Promise<TrilhaFormacao> {
+    const e = await this.etapa(user.tenantId, etapaId);
+    await this.validarModulo(user.tenantId, e.formacaoId, dto.moduloId);
+    const material = await this.resolverMaterial(user, e.formacaoId, dto);
+    await forTenant(user.tenantId).trilhaEtapa.update({
+      where: { id: etapaId },
+      data: {
+        materialId: material.id, tipoPrevisto: null,
+        titulo: dto.titulo || e.titulo,
+        ...(dto.orientacao !== undefined ? { orientacao: dto.orientacao || null } : {}),
+        ...(dto.duracaoMin !== undefined ? { duracaoMin: dto.duracaoMin } : {}),
+        ...(dto.moduloId !== undefined ? { moduloId: dto.moduloId } : {}),
+        obrigatoria: dto.obrigatoria,
+      },
+    });
+    await this.audit.record({ action: 'UPDATE', entity: 'trilha_etapa', entityId: etapaId, tenantId: user.tenantId, userId: user.id, metadata: { formacaoId: e.formacaoId, materialId: material.id } });
+    return this.obter(user, e.formacaoId);
   }
 
   async atualizar(user: AuthUser, etapaId: string, dto: AtualizarEtapaTrilhaDto): Promise<TrilhaFormacao> {
@@ -179,7 +229,7 @@ export class TrilhaService {
   /** O cursista marca (ou desmarca) uma etapa aprovada como concluida. */
   async concluir(user: AuthUser, etapaId: string, dto: ConcluirEtapaTrilhaDto): Promise<TrilhaFormacao> {
     const e = await this.etapa(user.tenantId, etapaId);
-    if (e.material.status !== 'APROVADO') throw new NotFoundException('Etapa não encontrada.');
+    if (e.material?.status !== 'APROVADO') throw new NotFoundException('Etapa não encontrada.');
     const db = forTenant(user.tenantId);
     const inscricao = await db.inscricao.findFirst({
       where: { userId: user.id, status: INSCRITO, turma: { formacaoId: e.formacaoId } }, select: { id: true },
@@ -212,6 +262,18 @@ export class TrilhaController {
   @RequirePermissions('trilha:editar')
   criar(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body(new ZodValidationPipe(criarEtapaTrilhaSchema)) dto: CriarEtapaTrilhaDto) {
     return this.svc.criar(user, id, dto);
+  }
+
+  @Post('formacoes/:id/trilha/modelo')
+  @RequirePermissions('trilha:editar')
+  aplicarModelo(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body(new ZodValidationPipe(aplicarModeloTrilhaSchema)) dto: AplicarModeloTrilhaDto) {
+    return this.svc.aplicarModelo(user, id, dto);
+  }
+
+  @Put('trilha/etapas/:etapaId/recurso')
+  @RequirePermissions('trilha:editar')
+  substituir(@CurrentUser() user: AuthUser, @Param('etapaId') etapaId: string, @Body(new ZodValidationPipe(substituirEtapaTrilhaSchema)) dto: SubstituirEtapaTrilhaDto) {
+    return this.svc.substituir(user, etapaId, dto);
   }
 
   @Put('trilha/etapas/:etapaId')

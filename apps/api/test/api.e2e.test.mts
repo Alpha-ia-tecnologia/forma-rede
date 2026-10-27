@@ -313,6 +313,34 @@ test('trilha: etapa do acervo e conclusao pelo professor', async () => {
   assert.ok(t.progresso, 'o professor ve o proprio progresso');
 });
 
+test('trilha: modelo pronto entra sem recurso e so chega ao professor depois de substituido', async () => {
+  const antes = ok(await api('GET', `/formacoes/${s.formacaoId}/trilha`, { token: s.token.formador }), 'trilha').etapas.length;
+  status(await api('POST', `/formacoes/${s.formacaoId}/trilha/modelo`, { token: s.token.formador, body: { modeloId: 'nao-existe' } }), 400, 'modelo inexistente');
+  status(await api('POST', `/formacoes/${s.formacaoId}/trilha/modelo`, { token: s.token.prof1, body: { modeloId: 'acolhida' } }), 403, 'professor aplica modelo');
+  const t = ok(await api('POST', `/formacoes/${s.formacaoId}/trilha/modelo`, {
+    token: s.token.formador, body: { modeloId: 'acolhida' },
+  }), 'aplicar modelo');
+  const novas = t.etapas.slice(antes);
+  assert.equal(novas.length, 3);
+  assert.ok(novas.every((e: { material: unknown; tipoPrevisto: string | null }) => e.material === null && !!e.tipoPrevisto), 'sem recurso, com o tipo previsto');
+  assert.deepEqual(novas.map((e: { ordem: number }) => e.ordem), [antes + 1, antes + 2, antes + 3]);
+
+  const doProfessor = ok(await api('GET', `/formacoes/${s.formacaoId}/trilha`, { token: s.token.prof1 }), 'trilha do professor');
+  assert.equal(doProfessor.etapas.length, antes, 'o professor nao ve etapa sem recurso');
+  status(await api('POST', `/trilha/etapas/${novas[0].id}/conclusao`, { token: s.token.prof1, body: { concluida: true } }), 404, 'concluir etapa sem recurso');
+
+  const depois = ok(await api('PUT', `/trilha/etapas/${novas[0].id}/recurso`, {
+    token: s.token.formador, body: { titulo: 'Boas-vindas da equipe E2E', materialId: s.materialId, obrigatoria: true },
+  }), 'substituir');
+  const feita = depois.etapas.find((e: { id: string }) => e.id === novas[0].id);
+  assert.equal(feita.material.id, s.materialId);
+  assert.equal(feita.tipoPrevisto, null);
+  assert.equal(feita.titulo, 'Boas-vindas da equipe E2E');
+  assert.equal(feita.orientacao, novas[0].orientacao, 'sem orientacao nova, fica a do modelo');
+  const agora = ok(await api('GET', `/formacoes/${s.formacaoId}/trilha`, { token: s.token.prof1 }), 'trilha do professor');
+  assert.equal(agora.etapas.length, antes + 1, 'a etapa substituida chega ao professor');
+});
+
 test('paineis: Inicio de quem conduz, painel da rede e acompanhamento respondem', async () => {
   ok(await api('GET', '/painel/conducao', { token: s.token.formador }), 'painel de conducao');
   ok(await api('GET', '/dashboard', { token: s.token.gestora }), 'painel da rede');
