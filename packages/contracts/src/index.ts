@@ -256,6 +256,12 @@ export const createAtividadeSchema = z.object({
 });
 export type CreateAtividadeDto = z.infer<typeof createAtividadeSchema>;
 
+/** Novo prazo de entrega de uma atividade; null deixa a atividade sem prazo. */
+export const prazoAtividadeSchema = z.object({
+  prazo: z.coerce.date({ invalid_type_error: 'Informe uma data válida.' }).nullable(),
+});
+export type PrazoAtividadeDto = z.infer<typeof prazoAtividadeSchema>;
+
 export const enviarEntregaSchema = z.object({
   conteudo: z.string().trim().min(1, 'Descreva a entrega.').max(5000, 'Use até 5.000 caracteres; o restante pode ir num link.'),
   anexoUrl: urlWeb.optional(),

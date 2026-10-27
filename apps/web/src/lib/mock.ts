@@ -936,6 +936,14 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
   if (partF && method === 'GET') return as(participacaoDemo(partF[1] as string));
   const condF = p.match(/^\/formacoes\/([^/]+)\/acompanhamento$/);
   if (condF && method === 'GET') return as(conducaoDemo(condF[1] as string));
+  const prazoAt = p.match(/^\/atividades\/([^/]+)\/prazo$/);
+  if (prazoAt && method === 'PUT') {
+    for (const f of formacoes) {
+      const a = (f.atividades as { id: string; prazo: string | null }[]).find((x) => x.id === prazoAt[1]);
+      if (a) { a.prazo = (body?.prazo as string | null) ?? null; return as(a); }
+    }
+    throw new Error('Atividade não encontrada.');
+  }
   const entregasAt = p.match(/^\/atividades\/([^/]+)\/entregas$/);
   if (entregasAt && method === 'GET') {
     const ordem: Record<EntregaStatus, number> = { ENVIADA: 0, EM_AJUSTE: 1, AVALIADA: 2 };

@@ -389,6 +389,23 @@ test('trilha com IA: substituir deixa na trilha so as etapas da proposta', async
   assert.ok(t.etapas.every((e: { id: string }) => !ids.has(e.id)), 'nenhuma etapa anterior ficou');
 });
 
+test('atividade: o formador muda a data de entrega e o professor ve a nova', async () => {
+  const a = ok(await api('POST', `/formacoes/${s.formacaoId}/atividades`, {
+    token: s.token.formador, body: { titulo: 'Atividade com prazo', prazo: '2026-12-01T23:59:00-03:00', pontuacao: 10 },
+  }), 'criar atividade com prazo');
+  const rota = `/atividades/${a.id}/prazo`;
+  status(await api('PUT', rota, { token: s.token.prof1, body: { prazo: '2026-12-10T23:59:00-03:00' } }), 403, 'professor muda prazo');
+  status(await api('PUT', rota, { token: s.token.formador, body: { prazo: 'nao-e-data' } }), 400, 'data invalida');
+  ok(await api('PUT', rota, { token: s.token.formador, body: { prazo: '2026-12-10T23:59:00-03:00' } }), 'mudar prazo');
+  const prazoDoProfessor = async () => ok(await api('GET', `/formacoes/${s.formacaoId}`, { token: s.token.prof1 }), 'formacao do professor')
+    .atividades.find((x: { id: string }) => x.id === a.id).prazo;
+  assert.equal(new Date(await prazoDoProfessor()).toISOString(), new Date('2026-12-10T23:59:00-03:00').toISOString());
+  ok(await api('PUT', rota, { token: s.token.formador, body: { prazo: null } }), 'tirar prazo');
+  assert.equal(await prazoDoProfessor(), null);
+  const auditoria = await runAsSystem((tx: any) => tx.auditLog.count({ where: { tenantId: s.tenantId, entity: 'atividade', entityId: a.id } }));
+  assert.equal(auditoria, 2, 'cada mudanca de prazo fica na auditoria');
+});
+
 test('paineis: Inicio de quem conduz, painel da rede e acompanhamento respondem', async () => {
   ok(await api('GET', '/painel/conducao', { token: s.token.formador }), 'painel de conducao');
   ok(await api('GET', '/dashboard', { token: s.token.gestora }), 'painel da rede');

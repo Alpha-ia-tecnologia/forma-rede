@@ -17,6 +17,7 @@ import type { EtapaTrilha, MaterialTipo, PropostaTrilhaIa, TempoTrilha, TrilhaFo
 import { api, getUser } from '../../../../lib/api';
 import { descreverMidia, reconhecerMidia, type Midia } from '../../../../lib/midia';
 import { plural } from '../../../../lib/texto';
+import { useSaidaProtegida } from '../../../../lib/saida';
 import { EmptyState, ListSkeleton, Note, SeloIA, StatusBadge } from '../../ui';
 
 type TipoRecurso = (typeof TIPOS_RECURSO_TRILHA)[number];
@@ -133,6 +134,8 @@ export function TrilhaFormativa({ formacaoId, modulos, aoMudarColecao, aoCarrega
 
   const { etapas, podeEditar, progresso, totalCursistas } = trilha;
   const aguardando = etapas.filter((e) => e.material && e.material.status !== 'APROVADO').length;
+  // O cursista so ve etapa com material aprovado (a API filtra): quem edita ve a conta.
+  const visiveisCursistas = etapas.filter((e) => e.material?.status === 'APROVADO').length;
   // Etapas de modelo ainda sem recurso: so quem edita as ve; a primeira tem a acao principal.
   const aDefinir = etapas.filter((e) => !e.material);
   const primeiraADefinir = aDefinir[0]?.id;
@@ -362,6 +365,10 @@ export function TrilhaFormativa({ formacaoId, modulos, aoMudarColecao, aoCarrega
         <p className="trilha-resumo">
           <span>{etapas.length} {etapas.length === 1 ? 'etapa' : 'etapas'}</span>
           {minutos > 0 && <span>cerca de {fmtDuracao(minutos)} de estudo</span>}
+          <span className="trilha-resumo-visiveis">
+            {visiveisCursistas === etapas.length ? 'todas visíveis para os cursistas'
+              : visiveisCursistas ? `${visiveisCursistas} de ${etapas.length} visíveis para os cursistas` : 'nenhuma visível para os cursistas ainda'}
+          </span>
           {aguardando > 0 && <span className="trilha-resumo-alerta">{aguardando} aguardando curadoria</span>}
           {aDefinir.length > 0 && <span className="trilha-resumo-alerta">{plural(aDefinir.length, 'etapa', 'etapas')} a definir</span>}
         </p>
@@ -734,6 +741,27 @@ const comuns = (v: { orientacao: string; duracao: string; moduloId: string; obri
   obrigatoria: v.obrigatoria,
 });
 
+/**
+ * Alguem tentou sair com o formulario sem salvar: a barra de acao pergunta no lugar
+ * (o foco vai para "Continuar editando", que tambem traz a barra para a vista).
+ */
+function BarraSaida({ saida, perde }: { saida: ReturnType<typeof useSaidaProtegida>; perde: string }) {
+  const primeiro = useRef<HTMLButtonElement>(null);
+  useEffect(() => { primeiro.current?.focus(); }, []);
+  return (
+    <div className="trilha-barra" data-estado="saindo" role="alertdialog" aria-label="Sair sem salvar?">
+      <p className="trilha-barra-resumo">
+        <strong>Sair sem salvar?</strong>
+        <span>{perde}</span>
+      </p>
+      <div className="trilha-barra-acoes">
+        <button ref={primeiro} type="button" className="btn btn-primary" onClick={saida.ficar}>Continuar editando</button>
+        <button type="button" className="btn btn-ghost" onClick={saida.sair}>Sair sem salvar</button>
+      </div>
+    </div>
+  );
+}
+
 /** O que a IA sugere procurar para a etapa sem recurso (texto da IA, na cor da IA). */
 function SugestaoIa({ texto }: { texto: string }) {
   return (
@@ -773,6 +801,7 @@ function GerarTrilhaIa({ formacaoId, atuais, ocupado, aoCancelar, aoSalvar }: {
   const controle = useRef<AbortController | null>(null);
   const campo = useRef<HTMLTextAreaElement>(null);
   const titulo = useRef<HTMLHeadingElement>(null);
+  const saida = useSaidaProtegida(fase === 'proposta' || pedido.objetivo.trim() !== '');
 
   // Cada fase poe o foco no seu comeco: o objetivo, o aviso de espera ou o titulo da proposta.
   useEffect(() => { (fase === 'pedido' ? campo.current : titulo.current)?.focus(); }, [fase]);
@@ -885,7 +914,7 @@ function GerarTrilhaIa({ formacaoId, atuais, ocupado, aoCancelar, aoSalvar }: {
           })}
         </ol>
         {proposta.observacoes && <p className="trilha-ia-obs"><strong>Para conferir:</strong> {proposta.observacoes}</p>}
-        <div className="trilha-barra">
+        {saida.destino ? <BarraSaida saida={saida} perde="A proposta da IA não foi salva e se perde." /> : <div className="trilha-barra">
           <p className="trilha-barra-resumo">
             <strong>{escolhidas.length ? `${plural(escolhidas.length, 'etapa', 'etapas')} de ${proposta.etapas.length} para salvar` : 'Nenhuma etapa marcada'}</strong>
             <span>{comMaterial ? `${comMaterial} com material do acervo · ` : ''}{destino(escolhidas.length)}</span>
@@ -899,7 +928,7 @@ function GerarTrilhaIa({ formacaoId, atuais, ocupado, aoCancelar, aoSalvar }: {
             <button type="button" className="btn btn-ghost" disabled={ocupado} onClick={() => descartar(true)}>Descartar</button>
           </div>
           {erro && <p className="campo-erro" role="alert">{erro}</p>}
-        </div>
+        </div>}
       </section>
     );
   }
@@ -978,7 +1007,7 @@ function GerarTrilhaIa({ formacaoId, atuais, ocupado, aoCancelar, aoSalvar }: {
           )}
         </fieldset>
       )}
-      <div className="trilha-barra">
+      {saida.destino ? <BarraSaida saida={saida} perde="O pedido ainda não foi enviado à IA e se perde." /> : <div className="trilha-barra">
         <p className="trilha-barra-resumo">
           <strong>{pedido.quantidade} etapas · {TEMPO_TRILHA_LABELS[pedido.tempo].toLowerCase()}</strong>
           <span>
@@ -991,7 +1020,7 @@ function GerarTrilhaIa({ formacaoId, atuais, ocupado, aoCancelar, aoSalvar }: {
           <button type="button" className="btn btn-ghost" onClick={aoCancelar}>Cancelar</button>
         </div>
         {erro && <p className="campo-erro" role="alert">{erro}</p>}
-      </div>
+      </div>}
     </form>
   );
 }
@@ -1099,6 +1128,11 @@ function FormEtapa({ formacaoId, modulos, podeAprovar, ocupado, noAcervo, etapa,
   const [erro, setErro] = useState<string | null>(null);
   const primeiro = useRef<HTMLButtonElement>(null);
   const campoTitulo = useRef<HTMLInputElement>(null);
+  // Algo preenchido e ainda nao salvo: sair pela navegacao pergunta antes.
+  const [inicial] = useState(() => JSON.stringify({ titulo: etapa?.titulo ?? '', c: etapa
+    ? { orientacao: etapa.orientacao ?? '', duracao: etapa.duracaoMin ? String(etapa.duracaoMin) : '', moduloId: etapa.modulo?.id ?? '', obrigatoria: etapa.obrigatoria }
+    : { orientacao: '', duracao: '', moduloId: '', obrigatoria: true } }));
+  const saida = useSaidaProtegida(!ocupado && (JSON.stringify({ titulo, c }) !== inicial || !!materialId || Object.values(recurso).some((v) => v.trim() !== '')));
 
   // Na substituicao o primeiro a trocar e o titulo; numa etapa nova, a origem do recurso.
   useEffect(() => { (etapa ? campoTitulo.current : primeiro.current)?.focus(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1249,13 +1283,26 @@ function FormEtapa({ formacaoId, modulos, podeAprovar, ocupado, noAcervo, etapa,
 
       <CamposComuns valor={c} mudar={(v) => setC({ ...c, ...v })} modulos={modulos} />
 
-      {erro && <Note tom="danger">{erro}</Note>}
-      <div className="trilha-form-acoes">
-        <button type="submit" className="btn btn-primary" disabled={ocupado || (origem === 'acervo' && !materialId)}>
-          {etapa ? (ocupado ? 'Salvando...' : 'Salvar etapa') : (ocupado ? 'Adicionando...' : 'Adicionar à trilha')}
-        </button>
-        <button type="button" className="btn btn-ghost" onClick={aoCancelar}>Cancelar</button>
-      </div>
+      {/* Presa ao fim da tela: o formulario e longo e o salvar fica sempre a vista, com o que muda para os cursistas. */}
+      {saida.destino ? <BarraSaida saida={saida} perde={etapa ? 'As alterações desta etapa não foram salvas e se perdem.' : 'A nova etapa não foi salva e se perde.'} /> : <div className="trilha-barra">
+        <p className="trilha-barra-resumo">
+          <strong>{etapa ? (doModelo ? 'Salvar o conteúdo da etapa' : 'Trocar o recurso da etapa') : 'Nova etapa no fim da trilha'}</strong>
+          <span>
+            {origem === 'acervo'
+              ? 'Material aprovado: os cursistas veem a etapa assim que você salvar.'
+              : podeAprovar
+                ? 'Recurso novo entra em revisão: aprove depois de salvar para os cursistas verem.'
+                : 'Recurso novo entra em revisão: os cursistas veem a etapa depois que a curadoria aprovar.'}
+          </span>
+        </p>
+        <div className="trilha-barra-acoes">
+          <button type="submit" className="btn btn-primary" disabled={ocupado || (origem === 'acervo' && !materialId)}>
+            {etapa ? (ocupado ? 'Salvando...' : 'Salvar etapa') : (ocupado ? 'Adicionando...' : 'Adicionar à trilha')}
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={aoCancelar}>Cancelar</button>
+        </div>
+        {erro && <p className="campo-erro" role="alert">{erro}</p>}
+      </div>}
     </form>
   );
 }
@@ -1272,6 +1319,8 @@ function FormEdicao({ etapa, modulos, ocupado, aoCancelar, aoSalvar }: {
   });
   const campo = useRef<HTMLInputElement>(null);
   useEffect(() => { campo.current?.focus(); }, []);
+  const [inicial] = useState(() => JSON.stringify({ titulo, c }));
+  const saida = useSaidaProtegida(!ocupado && JSON.stringify({ titulo, c }) !== inicial);
 
   return (
     <form className="trilha-form trilha-form-edicao" aria-label={`Editar a etapa ${etapa.titulo}`}
@@ -1286,10 +1335,22 @@ function FormEdicao({ etapa, modulos, ocupado, aoCancelar, aoSalvar }: {
         <input ref={campo} id={`${id}-tit`} className="input" required minLength={2} maxLength={160} value={titulo} onChange={(e) => setTitulo(e.target.value)} />
       </div>
       <CamposComuns valor={c} mudar={(v) => setC({ ...c, ...v })} modulos={modulos} />
-      <div className="trilha-form-acoes">
-        <button type="submit" className="btn btn-primary" disabled={ocupado}>{ocupado ? 'Salvando...' : 'Salvar etapa'}</button>
-        <button type="button" className="btn btn-ghost" onClick={aoCancelar}>Cancelar</button>
-      </div>
+      {saida.destino ? <BarraSaida saida={saida} perde="As alterações desta etapa não foram salvas e se perdem." /> : <div className="trilha-barra">
+        <p className="trilha-barra-resumo">
+          <strong>Editar a etapa</strong>
+          <span>
+            {!etapa.material
+              ? 'Ainda sem recurso: só quem edita vê a etapa. Use “Substituir conteúdo” para os cursistas verem.'
+              : etapa.material.status === 'APROVADO'
+                ? 'A etapa continua visível para os cursistas.'
+                : 'Os cursistas veem a etapa quando a curadoria aprovar o material.'}
+          </span>
+        </p>
+        <div className="trilha-barra-acoes">
+          <button type="submit" className="btn btn-primary" disabled={ocupado}>{ocupado ? 'Salvando...' : 'Salvar etapa'}</button>
+          <button type="button" className="btn btn-ghost" onClick={aoCancelar}>Cancelar</button>
+        </div>
+      </div>}
     </form>
   );
 }

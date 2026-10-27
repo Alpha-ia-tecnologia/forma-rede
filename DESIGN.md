@@ -58,7 +58,9 @@ Caixa de frase em títulos, botões e selos.
   Números de frequência saem da mesma conta da tela de Frequência.
 - Trabalho não salvo (ex.: chamada): rascunho automático no aparelho e, ao tentar sair pelo app, a
   escolha aparece na própria barra de ação ("Salvar e sair / Sair sem salvar / Continuar"); nada de
-  diálogo do navegador. Ação destrutiva ou que publica pede confirmação em linha, dizendo o que muda.
+  diálogo do navegador. Nos formulários da trilha (editar, substituir, nova etapa, gerar com IA) o salvar fica numa barra
+  presa ao fim da tela, que diz quando os cursistas veem a etapa; sair com alterações pergunta nela
+  (`useSaidaProtegida`: "Continuar editando / Sair sem salvar", barra laranja). Ação destrutiva ou que publica pede confirmação em linha, dizendo o que muda.
 - Salvar nunca afirma o que não é verdade: chamada salva com cursista sem marca pergunta antes ("Marcar
   os N como presentes e salvar / Salvar só as marcadas / Continuar"), fica "Chamada incompleta" em todas
   as telas e continua pendente. A barra muda de forma e cor com o que diz (pergunta laranja, salva verde

@@ -159,7 +159,7 @@ export default function FormacaoDetalhePage() {
           {trilhaFormativa}
           {acomp && (
             <AtividadesConducao formacaoId={id} atividades={acomp.atividades} base={f.atividades} cursistas={acomp.cursistas}
-              podeCriar={pode('atividade:create')} podeAvaliar={pode('entrega:avaliar')}
+              podeCriar={pode('atividade:create')} podeAvaliar={pode('entrega:avaliar')} podeAlterarPrazo={pode('atividade:update')}
               aberta={atividadeAberta} setAberta={setAtividadeAberta}
               aoMudar={() => { carregarAcompanhamento(); carregarDetalhe(); }} />
           )}

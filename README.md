@@ -187,6 +187,7 @@ Novos usuarios demo: `formador.sp@formarede.gov.br` e `prof.sp@formarede.gov.br`
 | POST | `/materiais/:id/decisao` | aprovar/rejeitar (curador) |
 | POST | `/materiais/:id/vincular` | colecao da formacao |
 | POST | `/formacoes/:id/atividades` | criar atividade |
+| PUT | `/atividades/:id/prazo` | atividade:update — `{prazo}` muda a data de entrega (`null` tira o prazo); fica na auditoria |
 | POST | `/atividades/:id/entrega` | professor envia/reenvia |
 | GET | `/atividades/:id/entregas` | formador lista |
 | POST | `/entregas/:id/avaliacao` | devolutiva (nota/feedback/ajuste) |

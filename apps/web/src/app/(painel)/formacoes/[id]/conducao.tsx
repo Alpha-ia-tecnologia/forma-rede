@@ -3,10 +3,10 @@
 // com a fila de entregas (e a avaliacao ali mesmo) e os encontros com a chamada.
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
-import { CalendarDays, Check, ClipboardCheck, ExternalLink, Hourglass, MessageSquareText, Plus } from 'lucide-react';
+import { CalendarClock, CalendarDays, Check, ClipboardCheck, ExternalLink, Hourglass, MessageSquareText, Plus } from 'lucide-react';
 import type { AcompanhamentoFormacao, EntregaParaAvaliar } from '@formarede/contracts';
 import { api } from '../../../../lib/api';
-import { fmtData, fmtDia, fmtHora, prazoEncerrado, quando } from '../../../../lib/datas';
+import { fimDoDia, fmtData, fmtDia, fmtHora, paraCampoData, prazoEncerrado, quando } from '../../../../lib/datas';
 import { plural } from '../../../../lib/texto';
 import { ListSkeleton, Note, StatusBadge } from '../../ui';
 import { ProximoEncontro, SeloData, SituacaoEntrega, TOM_ENTREGA } from '../../comum';
@@ -108,7 +108,7 @@ export function AtencaoConducao({ a, pendentesCuradoria, podeRegistrar, aoAvalia
 
 // ---------- Atividades e entregas ----------
 
-export function AtividadesConducao({ formacaoId, atividades, base, cursistas, podeCriar, podeAvaliar, aberta, setAberta, aoMudar }: {
+export function AtividadesConducao({ formacaoId, atividades, base, cursistas, podeCriar, podeAvaliar, podeAlterarPrazo, aberta, setAberta, aoMudar }: {
   formacaoId: string;
   /** Com contagem de entregas (null: a pessoa nao acompanha entregas). */
   atividades: AtividadeConducao[] | null;
@@ -117,11 +117,19 @@ export function AtividadesConducao({ formacaoId, atividades, base, cursistas, po
   cursistas: number;
   podeCriar: boolean;
   podeAvaliar: boolean;
+  /** atividade:update: muda a data de entrega. */
+  podeAlterarPrazo: boolean;
   aberta: string | null;
   setAberta: (id: string | null) => void;
   aoMudar: () => void;
 }) {
   const [criando, setCriando] = useState(false);
+  const [alterandoPrazo, setAlterandoPrazo] = useState<string | null>(null);
+  // Confirmacao no lugar do item, com o foco nela (o formulario some ao salvar).
+  const [prazoSalvo, setPrazoSalvo] = useState<{ id: string; texto: string } | null>(null);
+  useEffect(() => {
+    if (prazoSalvo) document.querySelector<HTMLElement>(`#atividade-${prazoSalvo.id} .prazo-salvo`)?.focus();
+  }, [prazoSalvo]);
   const lista = atividades ?? base.map((x) => ({ ...x, prazo: x.prazo ?? null, descricao: null, criterios: null, enviadas: 0, aguardando: 0, emAjuste: 0, avaliadas: 0 }));
 
   return (
@@ -172,13 +180,26 @@ export function AtividadesConducao({ formacaoId, atividades, base, cursistas, po
                     )}
                   </div>
                 )}
-                {atividades && podeAvaliar && x.enviadas > 0 && (
+                {prazoSalvo?.id === x.id && <p className="prazo-salvo foco-aviso" role="status" tabIndex={-1}><Check size={16} aria-hidden="true" /> {prazoSalvo.texto}</p>}
+                {alterandoPrazo === x.id ? (
+                  <PrazoAtividade atividade={x} aoFechar={(texto) => {
+                    setAlterandoPrazo(null);
+                    if (texto) { setPrazoSalvo({ id: x.id, texto }); aoMudar(); }
+                  }} />
+                ) : ((atividades && podeAvaliar && x.enviadas > 0) || podeAlterarPrazo) && (
                   <div className="fitem-acoes">
-                    <button type="button" className={x.aguardando ? 'btn btn-secondary' : 'btn btn-ghost'} aria-expanded={aberto}
-                      aria-controls={aberto ? `entregas-${x.id}` : undefined} onClick={() => setAberta(aberto ? null : x.id)}>
-                      {aberto ? 'Recolher as entregas' : x.aguardando ? 'Dar devolutivas' : 'Ver entregas'}
-                      <span className="sr-only">: {x.titulo}</span>
-                    </button>
+                    {atividades && podeAvaliar && x.enviadas > 0 && (
+                      <button type="button" className={x.aguardando ? 'btn btn-secondary' : 'btn btn-ghost'} aria-expanded={aberto}
+                        aria-controls={aberto ? `entregas-${x.id}` : undefined} onClick={() => setAberta(aberto ? null : x.id)}>
+                        {aberto ? 'Recolher as entregas' : x.aguardando ? 'Dar devolutivas' : 'Ver entregas'}
+                        <span className="sr-only">: {x.titulo}</span>
+                      </button>
+                    )}
+                    {podeAlterarPrazo && (
+                      <button type="button" className="btn btn-ghost" onClick={() => { setPrazoSalvo(null); setAlterandoPrazo(x.id); }}>
+                        <CalendarClock size={16} aria-hidden="true" /> {x.prazo ? 'Alterar prazo' : 'Definir prazo'}<span className="sr-only">: {x.titulo}</span>
+                      </button>
+                    )}
                   </div>
                 )}
                 {aberto && <EntregasAtividade id={`entregas-${x.id}`} atividadeId={x.id} pontuacao={x.pontuacao} descricao={x.descricao} criterios={x.criterios} aoMudar={aoMudar} />}
@@ -359,6 +380,56 @@ function FormAvaliacao({ entrega, pontuacao, principal, aoCancelar, aoSalvar }: 
   );
 }
 
+/** Data de entrega: escolher outra, ou tirar o prazo; quem ja enviou continua com a entrega. */
+function PrazoAtividade({ atividade, aoFechar }: {
+  atividade: { id: string; titulo: string; prazo: string | null };
+  /** Texto da confirmacao quando salvou; null quando cancelou. */
+  aoFechar: (texto: string | null) => void;
+}) {
+  const id = useId();
+  const [data, setData] = useState(atividade.prazo ? paraCampoData(atividade.prazo) : '');
+  const [erro, setErro] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+  const campo = useRef<HTMLInputElement>(null);
+  useEffect(() => { campo.current?.focus(); }, []);
+  const hoje = paraCampoData(new Date().toISOString());
+
+  async function salvar(prazo: string | null) {
+    setOcupado(true);
+    setErro(null);
+    try {
+      await api.put(`/atividades/${atividade.id}/prazo`, { prazo });
+      aoFechar(prazo ? `Prazo alterado para ${fmtData(prazo)}. Os cursistas já veem a nova data.` : 'Prazo retirado: a atividade fica sem data de entrega.');
+    } catch (e) {
+      setErro(msg(e, 'Não foi possível alterar o prazo.'));
+      setOcupado(false);
+    }
+  }
+
+  return (
+    <form className="prazo-form" noValidate aria-label={`Prazo de ${atividade.titulo}`} onSubmit={(ev) => {
+      ev.preventDefault();
+      if (!data) { setErro('Escolha a nova data de entrega.'); campo.current?.focus(); return; }
+      void salvar(fimDoDia(data));
+    }}>
+      <div>
+        <label className="label" htmlFor={`${id}-data`}>Nova data de entrega</label>
+        <span className="hint" id={`${id}-dica`}>Vale até 23h59 do dia escolhido.{data && data < hoje ? ' Essa data já passou: a atividade fica com o prazo encerrado.' : ''}</span>
+        <input ref={campo} id={`${id}-data`} className="input" type="date" value={data} aria-describedby={`${id}-dica${erro ? ` ${id}-erro` : ''}`}
+          aria-invalid={!!erro || undefined} onChange={(e) => { setData(e.target.value); setErro(null); }} />
+        {erro && <p id={`${id}-erro`} className="campo-erro">{erro}</p>}
+      </div>
+      <div className="fform-acoes">
+        <button type="submit" className="btn btn-primary" disabled={ocupado}>{ocupado ? 'Salvando...' : 'Salvar prazo'}</button>
+        {atividade.prazo && (
+          <button type="button" className="btn btn-ghost" disabled={ocupado} onClick={() => void salvar(null)}>Tirar o prazo</button>
+        )}
+        <button type="button" className="btn btn-ghost" disabled={ocupado} onClick={() => aoFechar(null)}>Cancelar</button>
+      </div>
+    </form>
+  );
+}
+
 function NovaAtividade({ formacaoId, aoFechar }: { formacaoId: string; aoFechar: (criou: boolean) => void }) {
   const id = useId();
   const [v, setV] = useState({ titulo: '', descricao: '', criterios: '', prazo: '', pontuacao: '10' });
@@ -372,7 +443,7 @@ function NovaAtividade({ formacaoId, aoFechar }: { formacaoId: string; aoFechar:
     try {
       await api.post(`/formacoes/${formacaoId}/atividades`, {
         titulo: v.titulo.trim(), descricao: v.descricao.trim() || undefined, criterios: v.criterios.trim() || undefined,
-        prazo: v.prazo ? `${v.prazo}T23:59:00` : undefined, pontuacao: Number(v.pontuacao || 10),
+        prazo: v.prazo ? fimDoDia(v.prazo) : undefined, pontuacao: Number(v.pontuacao || 10),
       });
       aoFechar(true);
     } catch (e) {

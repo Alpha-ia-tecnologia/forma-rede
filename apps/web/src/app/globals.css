@@ -1002,6 +1002,10 @@ fieldset.resp-pergunta > legend + * { clear: both; }
 /* Copiloto (plano com IA) e busca nas listas */
 /* Preparacao da formacao: passos com a acao logo abaixo. */
 .prep-acao { margin-top: var(--space-2); }
+/* Prazo da atividade: formulario curto no lugar das acoes e a confirmacao no item */
+.prazo-form { display: grid; gap: var(--space-3); max-width: 420px; margin-top: var(--space-3); }
+.prazo-salvo { display: flex; align-items: center; gap: 6px; margin: var(--space-2) 0 0; color: var(--green); font-size: var(--text-sm); font-weight: 500; }
+.prazo-salvo:focus:not(:focus-visible) { outline: none; }
 /* Em 320 px o texto do botao quebra em vez de passar da tela. */
 .prep-acao .btn { max-width: 100%; white-space: normal; text-align: center; line-height: 1.3; }
 .prep-turma { margin-top: var(--space-3); }
@@ -1367,6 +1371,9 @@ fieldset.resp-pergunta > legend + * { clear: both; }
 .trilha-barra-acoes { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .trilha-barra .campo-erro { flex-basis: 100%; margin: 0; }
 body:has(.trilha-barra) .assistant-fab { display: none; }
+/* Pergunta antes de sair sem salvar: a barra muda de cor com o que diz, como a da chamada */
+.trilha-barra[data-estado='saindo'] { border-color: var(--amber); background: var(--amber-soft); }
+.trilha-barra[data-estado='saindo'] .trilha-barra-resumo span { color: var(--amber); }
 @media (max-width: 1023px) {
   body:has(.trilha-barra) .mobile-nav { display: none; }
   body:has(.trilha-barra) .app-content { padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }

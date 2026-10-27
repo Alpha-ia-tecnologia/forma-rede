@@ -1,5 +1,6 @@
-// Atividades e entregas (RF-083..088): formador cria atividades por formacao;
-// professor envia entrega; formador avalia com nota/feedback ou pede ajuste.
+// Atividades e entregas (RF-083..088): formador cria atividades por formacao (e pode
+// mudar o prazo depois); professor envia entrega; formador avalia com nota/feedback ou
+// pede ajuste.
 import {
   Body,
   Controller,
@@ -10,6 +11,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Put,
 } from '@nestjs/common';
 import { forTenant } from '@formarede/db';
 import {
@@ -20,16 +22,37 @@ import {
   createAtividadeSchema,
   EnviarEntregaDto,
   enviarEntregaSchema,
+  PrazoAtividadeDto,
+  prazoAtividadeSchema,
 } from '@formarede/contracts';
 import { CurrentUser, RequirePermissions } from '../../common/security';
 import { ZodValidationPipe } from '../../common/http';
+import { AuditService } from '../../audit/audit.module';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 @Injectable()
 export class AtividadesService {
+  constructor(private readonly audit: AuditService) {}
+
   create(tenantId: string, formacaoId: string, dto: CreateAtividadeDto) {
     return forTenant(tenantId).atividade.create({
       data: { ...dto, tenantId, formacaoId },
     });
+  }
+
+  /** Muda (ou tira) o prazo de entrega; quem ja enviou continua com a entrega como esta. */
+  async alterarPrazo(user: AuthUser, atividadeId: string, dto: PrazoAtividadeDto) {
+    if (!UUID.test(atividadeId)) throw new NotFoundException('Atividade nao encontrada.');
+    const db = forTenant(user.tenantId);
+    const atual = await db.atividade.findFirst({ where: { id: atividadeId, tenantId: user.tenantId }, select: { prazo: true } });
+    if (!atual) throw new NotFoundException('Atividade nao encontrada.');
+    const atividade = await db.atividade.update({ where: { id: atividadeId }, data: { prazo: dto.prazo } });
+    await this.audit.record({
+      action: 'UPDATE', entity: 'atividade', entityId: atividadeId, tenantId: user.tenantId, userId: user.id,
+      metadata: { campo: 'prazo', de: atual.prazo?.toISOString() ?? null, para: dto.prazo?.toISOString() ?? null },
+    });
+    return atividade;
   }
 
   /** Entregas de uma atividade, para avaliacao do formador. */
@@ -99,6 +122,16 @@ export class AtividadesController {
   @RequirePermissions('entrega:read')
   entregas(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.svc.entregas(user.tenantId, id);
+  }
+
+  @Put('atividades/:id/prazo')
+  @RequirePermissions('atividade:update')
+  alterarPrazo(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(prazoAtividadeSchema)) dto: PrazoAtividadeDto,
+  ) {
+    return this.svc.alterarPrazo(user, id, dto);
   }
 
   @Post('atividades/:id/entrega')

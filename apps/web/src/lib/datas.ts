@@ -40,3 +40,14 @@ export function quando(iso: string, agora = new Date()): string {
 export function prazoEncerrado(iso: string, agora = new Date()): boolean {
   return new Date(iso).getTime() < agora.getTime();
 }
+
+/** Valor de um <input type="date"> (dia local) a partir de uma data ISO. */
+export function paraCampoData(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Prazo de entrega: o fim do dia escolhido no horario de quem preenche (23h59), em ISO. */
+export function fimDoDia(campoData: string): string {
+  return new Date(`${campoData}T23:59:00`).toISOString();
+}
