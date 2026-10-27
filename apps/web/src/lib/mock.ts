@@ -192,7 +192,7 @@ function materialDaTrilha(formacaoId: string, body: Record<string, unknown> | un
 }
 
 /** Propostas de trilha geradas nesta sessao, esperando salvar ou descartar. */
-const propostasTrilhaDemo = new Map<string, PropostaTrilhaIa & { formacaoId: string }>();
+const propostasTrilhaDemo = new Map<string, PropostaTrilhaIa & { formacaoId: string; substituir: boolean }>();
 
 function resequenciar(formacaoId: string) {
   trilhaDemo.filter((e) => e.formacaoId === formacaoId).sort((a, b) => a.ordem - b.ordem).forEach((e, i) => { e.ordem = i + 1; });
@@ -1011,13 +1011,15 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
           };
         }),
       };
-      propostasTrilhaDemo.set(proposta.interacaoId, { ...proposta, formacaoId });
+      propostasTrilhaDemo.set(proposta.interacaoId, { ...proposta, formacaoId, substituir: body?.substituir === true });
       return as(proposta);
     }
     const proposta = propostasTrilhaDemo.get(interacaoId);
     if (!proposta || proposta.formacaoId !== formacaoId) throw new Error('Proposta não encontrada.');
     const incluir = [...new Set(body?.incluir as number[])].filter((i) => i < proposta.etapas.length).sort((a, b) => a - b);
     if (!incluir.length) throw new Error('Escolha ao menos uma etapa para salvar.');
+    // Substituir: as etapas atuais saem e a proposta comeca na posicao 1 (como a API).
+    if (proposta.substituir) for (let k = trilhaDemo.length - 1; k >= 0; k--) if (trilhaDemo[k]!.formacaoId === formacaoId) trilhaDemo.splice(k, 1);
     const ultima = Math.max(0, ...trilhaDemo.filter((e) => e.formacaoId === formacaoId).map((e) => e.ordem));
     incluir.forEach((i, k) => {
       const e = proposta.etapas[i]!;

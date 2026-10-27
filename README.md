@@ -360,7 +360,7 @@ obrigatória ou opcional; o cursista estuda na própria página e marca o que co
 | POST | `/formacoes/:id/trilha/etapas` | trilha:editar — `materialId` do acervo (aprovado) **ou** `recurso` novo `{tipo, titulo, url}` |
 | POST | `/formacoes/:id/trilha/modelo` | trilha:editar — `{modeloId}`: as etapas do modelo entram no fim da trilha, sem recurso |
 | PUT | `/trilha/etapas/:etapaId/recurso` | trilha:editar — mesmos campos de criar: dá à etapa do modelo (ou à de material recusado) o recurso e os textos |
-| POST | `/formacoes/:id/trilha/ia` | trilha:editar + ia:usar — `{objetivo, quantidade (3-8), tempo, formatos, usarAcervo}`: proposta do Gerador de trilhas (nada é gravado na trilha) |
+| POST | `/formacoes/:id/trilha/ia` | trilha:editar + ia:usar — `{objetivo, quantidade (3-8), tempo, formatos, usarAcervo, substituir}`: proposta do Gerador de trilhas (nada é gravado na trilha); com `substituir`, ao salvar ela fica no lugar das etapas atuais |
 | POST | `/formacoes/:id/trilha/ia/:interacaoId` | trilha:editar — `{incluir: [posições]}`: grava as etapas escolhidas; descartar usa `POST /ia/interacoes/:id/decisao` (`REJEITAR`) |
 | PUT / DELETE | `/trilha/etapas/:etapaId` | trilha:editar |
 | POST | `/trilha/etapas/:etapaId/mover` | trilha:editar — `{direcao: "subir" \| "descer"}` |
@@ -381,7 +381,9 @@ município, pode buscar mais materiais e entrega a proposta pela ferramenta `apr
 validada pelo schema do `contracts`. A API confere os materiais citados (só aprovados do próprio
 município; o resto vira etapa a definir, com `recurso_sugerido` do que procurar) e registra a
 interação (`ai_interacao`, assistente `gerador-trilha`, prompt versionado). A tela mostra a proposta
-como rascunho da IA; só as etapas marcadas entram na trilha ao salvar (`APROVADA` ou `EDITADA`), e
+como rascunho da IA; só as etapas marcadas entram na trilha ao salvar (`APROVADA` ou `EDITADA`), no fim
+ou no lugar da trilha atual ("Substituir pela proposta da IA", o padrão quando a trilha só tem etapas a
+definir, como as de um modelo pronto; com material ou progresso de cursistas, a tela avisa o que sai), e
 descartar fica registrado (`REJEITADA`). Com o provider `mock` do município, a proposta sai de
 `propostaTrilhaDeExemplo`, sem chamar o modelo (testes e demonstração).
 

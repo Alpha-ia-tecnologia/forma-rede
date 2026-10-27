@@ -340,7 +340,11 @@ export class TrilhaService {
     const aprovados = new Set((citados.length
       ? await db.material.findMany({ where: { id: { in: citados }, tenantId: user.tenantId, status: 'APROVADO' }, select: { id: true } })
       : []).map((m) => m.id));
-    const ultima = (await db.trilhaEtapa.aggregate({ where: { formacaoId }, _max: { ordem: true } }))._max.ordem ?? 0;
+    // Pedido de substituir: as etapas atuais saem e a proposta comeca na posicao 1. Se a gravacao
+    // falhar depois daqui, a proposta segue GERADA e pode ser salva de novo.
+    const substituir = (interacao.entrada as { pedido?: { substituir?: boolean } } | null)?.pedido?.substituir === true;
+    const removidas = substituir ? (await db.trilhaEtapa.deleteMany({ where: { formacaoId, tenantId: user.tenantId } })).count : 0;
+    const ultima = substituir ? 0 : (await db.trilhaEtapa.aggregate({ where: { formacaoId }, _max: { ordem: true } }))._max.ordem ?? 0;
     const tipos = TIPOS_RECURSO_TRILHA as readonly string[];
     const linhas = escolhidas.map((e, k) => {
       const materialId = e.material && aprovados.has(e.material.id) ? e.material.id : null;
@@ -362,7 +366,7 @@ export class TrilhaService {
     });
     await this.audit.record({
       action: 'APPROVE', entity: 'ai_interacao', entityId: interacaoId, tenantId: user.tenantId, userId: user.id,
-      metadata: { trilha: true, formacaoId, etapas: indices.length, de: proposta.etapas.length },
+      metadata: { trilha: true, formacaoId, etapas: indices.length, de: proposta.etapas.length, substituiu: removidas },
     });
     return this.obter(user, formacaoId);
   }

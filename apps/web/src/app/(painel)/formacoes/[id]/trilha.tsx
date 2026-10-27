@@ -70,7 +70,7 @@ export function TrilhaFormativa({ formacaoId, modulos, aoMudarColecao, aoCarrega
   const [escolhendoModelo, setEscolhendoModelo] = useState(false);
   const [gerandoIa, setGerandoIa] = useState(false);
   // Modelo ou proposta da IA recem-salvos: a confirmacao diz que as etapas ja estao na trilha e o que falta.
-  const [aplicado, setAplicado] = useState<{ origem: 'modelo' | 'ia'; nome: string; etapas: number; comMaterial: number } | null>(null);
+  const [aplicado, setAplicado] = useState<{ origem: 'modelo' | 'ia'; nome: string; etapas: number; comMaterial: number; substituiu: number } | null>(null);
   const [editando, setEditando] = useState<string | null>(null);
   // Etapa recebendo recurso e textos: a de modelo, ou a que teve o material recusado.
   const [substituindo, setSubstituindo] = useState<string | null>(null);
@@ -202,7 +202,7 @@ export function TrilhaFormativa({ formacaoId, modulos, aoMudarColecao, aoCarrega
       setTrilha(nova);
       setEscolhendoModelo(false);
       const modelo = MODELOS_TRILHA.find((m) => m.id === modeloId);
-      setAplicado({ origem: 'modelo', nome: modelo?.nome ?? 'escolhido', etapas: nova.etapas.length - antes.size, comMaterial: 0 });
+      setAplicado({ origem: 'modelo', nome: modelo?.nome ?? 'escolhido', etapas: nova.etapas.length - antes.size, comMaterial: 0, substituiu: 0 });
       return null;
     } catch (err) {
       return msg(err, 'Não foi possível usar o modelo.');
@@ -212,7 +212,7 @@ export function TrilhaFormativa({ formacaoId, modulos, aoMudarColecao, aoCarrega
   }
 
   /** Grava as etapas escolhidas da proposta da IA (a decisao humana). */
-  async function salvarProposta(proposta: PropostaTrilhaIa, incluir: number[]): Promise<string | null> {
+  async function salvarProposta(proposta: PropostaTrilhaIa, incluir: number[], substituir: boolean): Promise<string | null> {
     const antes = new Set(etapas.map((e) => e.id));
     setOcupado('ia');
     setErro(null);
@@ -225,7 +225,7 @@ export function TrilhaFormativa({ formacaoId, modulos, aoMudarColecao, aoCarrega
       setTrilha(nova);
       setGerandoIa(false);
       const comMaterial = novas.filter((e) => e.material).length;
-      setAplicado({ origem: 'ia', nome: '', etapas: novas.length, comMaterial });
+      setAplicado({ origem: 'ia', nome: '', etapas: novas.length, comMaterial, substituiu: substituir ? antes.size : 0 });
       if (comMaterial) aoMudarColecao();
       return null;
     } catch (err) {
@@ -376,7 +376,7 @@ export function TrilhaFormativa({ formacaoId, modulos, aoMudarColecao, aoCarrega
       ) : aplicado?.origem === 'ia' ? (
         <Note tom="ok">
           Pronto: {aplicado.etapas === 1 ? 'a etapa proposta pela IA já está salva' : `as ${aplicado.etapas} etapas propostas pela IA já estão salvas`} na
-          trilha desta formação.{' '}
+          trilha desta formação{aplicado.substituiu ? `, no lugar ${aplicado.substituiu === 1 ? 'da etapa que estava nela' : `das ${aplicado.substituiu} etapas que estavam nela`}` : ''}.{' '}
           {aplicado.comMaterial === aplicado.etapas
             ? 'Todas usam materiais aprovados do acervo e já aparecem para os cursistas.'
             : `${aplicado.comMaterial ? `${plural(aplicado.comMaterial, 'usa', 'usam')} material do acervo e já aparece${aplicado.comMaterial === 1 ? '' : 'm'} para os cursistas. ` : ''}Nas que ficaram sem recurso, use “Substituir conteúdo”: a sugestão da IA do que procurar está em cada uma.`}
@@ -391,7 +391,12 @@ export function TrilhaFormativa({ formacaoId, modulos, aoMudarColecao, aoCarrega
       {erro && <Note tom="danger">{erro}</Note>}
 
       {gerandoIa && (
-        <GerarTrilhaIa formacaoId={formacaoId} jaTem={etapas.length} ocupado={ocupado === 'ia'} aoSalvar={salvarProposta}
+        <GerarTrilhaIa formacaoId={formacaoId} ocupado={ocupado === 'ia'} aoSalvar={salvarProposta}
+          atuais={{
+            total: etapas.length,
+            comMaterial: etapas.filter((e) => e.material).length,
+            concluintes: etapas.reduce((n, e) => n + (e.concluintes ?? 0), 0),
+          }}
           aoCancelar={() => { foco.current = 'titulo'; setGerandoIa(false); setErro(null); }} />
       )}
 
@@ -743,18 +748,23 @@ function SugestaoIa({ texto }: { texto: string }) {
  * Gerar com IA: o pedido (objetivo, etapas, tempo, formatos), a espera e a proposta em
  * rascunho, com cada etapa marcada para entrar ou nao. Descartar registra a decisao.
  */
-function GerarTrilhaIa({ formacaoId, jaTem, ocupado, aoCancelar, aoSalvar }: {
+function GerarTrilhaIa({ formacaoId, atuais, ocupado, aoCancelar, aoSalvar }: {
   formacaoId: string;
-  /** Etapas que a trilha ja tem: as da proposta entram depois delas. */
-  jaTem: number;
+  /** A trilha de agora: quantas etapas, quantas com material, quantas conclusoes de cursistas. */
+  atuais: { total: number; comMaterial: number; concluintes: number };
   ocupado: boolean;
   aoCancelar: () => void;
-  aoSalvar: (proposta: PropostaTrilhaIa, incluir: number[]) => Promise<string | null>;
+  aoSalvar: (proposta: PropostaTrilhaIa, incluir: number[], substituir: boolean) => Promise<string | null>;
 }) {
   const id = useId();
-  const [pedido, setPedido] = useState<{ objetivo: string; quantidade: number; tempo: TempoTrilha; formatos: TipoRecurso[]; usarAcervo: boolean }>({
+  // Trilha so com etapas a definir (ex.: de um modelo pronto): o padrao e a IA ficar no lugar dela.
+  const [pedido, setPedido] = useState<{ objetivo: string; quantidade: number; tempo: TempoTrilha; formatos: TipoRecurso[]; usarAcervo: boolean; substituir: boolean }>({
     objetivo: '', quantidade: 5, tempo: 'ate-2h', formatos: [...TIPOS_RECURSO_TRILHA], usarAcervo: true,
+    substituir: atuais.total > 0 && atuais.comMaterial === 0,
   });
+  const destino = (n: number) => (atuais.total && pedido.substituir
+    ? `${n === 1 ? 'entra' : 'entram'} no lugar ${atuais.total === 1 ? 'da etapa atual' : `das ${atuais.total} etapas atuais`}`
+    : atuais.total ? `${n === 1 ? 'entra' : 'entram'} no fim da trilha` : `${n === 1 ? 'entra' : 'entram'} na trilha desta formação`);
   const [fase, setFase] = useState<'pedido' | 'gerando' | 'proposta'>('pedido');
   const [proposta, setProposta] = useState<PropostaTrilhaIa | null>(null);
   const [incluir, setIncluir] = useState<Set<number>>(new Set());
@@ -878,12 +888,12 @@ function GerarTrilhaIa({ formacaoId, jaTem, ocupado, aoCancelar, aoSalvar }: {
         <div className="trilha-barra">
           <p className="trilha-barra-resumo">
             <strong>{escolhidas.length ? `${plural(escolhidas.length, 'etapa', 'etapas')} de ${proposta.etapas.length} para salvar` : 'Nenhuma etapa marcada'}</strong>
-            <span>{comMaterial ? `${comMaterial} com material do acervo · ` : ''}{jaTem ? 'entram no fim da trilha' : 'entram na trilha desta formação'}</span>
+            <span>{comMaterial ? `${comMaterial} com material do acervo · ` : ''}{destino(escolhidas.length)}</span>
           </p>
           <div className="trilha-barra-acoes">
             <button type="button" className="btn btn-primary" disabled={ocupado || !escolhidas.length}
-              onClick={async () => setErro(await aoSalvar(proposta, [...incluir].sort((a, b) => a - b)))}>
-              {ocupado ? 'Salvando...' : 'Salvar na trilha'}
+              onClick={async () => setErro(await aoSalvar(proposta, [...incluir].sort((a, b) => a - b), pedido.substituir && atuais.total > 0))}>
+              {ocupado ? 'Salvando...' : pedido.substituir && atuais.total ? 'Substituir a trilha' : 'Salvar na trilha'}
             </button>
             <button type="button" className="btn btn-secondary" disabled={ocupado} onClick={() => descartar(false)}>Ajustar o pedido</button>
             <button type="button" className="btn btn-ghost" disabled={ocupado} onClick={() => descartar(true)}>Descartar</button>
@@ -948,10 +958,33 @@ function GerarTrilhaIa({ formacaoId, jaTem, ocupado, aoCancelar, aoSalvar }: {
         <span className="trilha-check-caixa" aria-hidden="true"><Check size={14} strokeWidth={3} /></span>
         Usar os materiais aprovados do acervo da rede quando servirem
       </label>
+      {atuais.total > 0 && (
+        <fieldset className="trilha-tipos">
+          <legend className="label">{atuais.total === 1 ? 'A etapa que já está na trilha' : `As ${atuais.total} etapas que já estão na trilha`}</legend>
+          <div className="seg">
+            <button type="button" aria-pressed={pedido.substituir} onClick={() => setPedido({ ...pedido, substituir: true })}>
+              <Replace size={16} aria-hidden="true" /> Substituir pela proposta da IA
+            </button>
+            <button type="button" aria-pressed={!pedido.substituir} onClick={() => setPedido({ ...pedido, substituir: false })}>
+              <Plus size={16} aria-hidden="true" /> Manter e acrescentar no fim
+            </button>
+          </div>
+          {pedido.substituir && (atuais.comMaterial > 0 || atuais.concluintes > 0) && (
+            <Note tom="warn">
+              Ao salvar a proposta, {atuais.total === 1 ? 'a etapa atual sai' : `as ${atuais.total} etapas atuais saem`} da trilha
+              {atuais.comMaterial ? ` (${plural(atuais.comMaterial, 'tem', 'têm')} material; ele continua no acervo e na coleção da formação)` : ''}.
+              {atuais.concluintes ? ` Os cursistas já registraram ${plural(atuais.concluintes, 'conclusão', 'conclusões')} nelas, e esse progresso se perde.` : ''}
+            </Note>
+          )}
+        </fieldset>
+      )}
       <div className="trilha-barra">
         <p className="trilha-barra-resumo">
           <strong>{pedido.quantidade} etapas · {TEMPO_TRILHA_LABELS[pedido.tempo].toLowerCase()}</strong>
-          <span>{pedido.formatos.length ? pedido.formatos.map((t) => MATERIAL_TIPO_LABELS[t]).join(', ') : 'nenhum formato marcado'}</span>
+          <span>
+            {pedido.formatos.length ? pedido.formatos.map((t) => MATERIAL_TIPO_LABELS[t]).join(', ') : 'nenhum formato marcado'}
+            {atuais.total > 0 && ` · ${pedido.substituir ? 'no lugar da trilha atual' : 'depois da trilha atual'}`}
+          </span>
         </p>
         <div className="trilha-barra-acoes">
           <button type="submit" className="btn btn-primary"><Sparkles size={18} aria-hidden="true" /> Gerar proposta</button>

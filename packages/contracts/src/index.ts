@@ -795,6 +795,8 @@ export const gerarTrilhaIaSchema = z.object({
   formatos: z.array(z.enum(TIPOS_RECURSO_TRILHA)).min(1, 'Escolha ao menos um formato.').default([...TIPOS_RECURSO_TRILHA]),
   /** Priorizar materiais ja aprovados no acervo da rede. */
   usarAcervo: z.boolean().default(true),
+  /** A proposta fica no lugar das etapas atuais (ex.: as de um modelo pronto) em vez de entrar no fim. */
+  substituir: z.boolean().default(false),
 });
 export type GerarTrilhaIaDto = z.infer<typeof gerarTrilhaIaSchema>;
 

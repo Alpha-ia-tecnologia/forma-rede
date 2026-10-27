@@ -100,6 +100,7 @@ export function montarPedidoTrilha(ctx: ContextoTrilhaIa, pedido: GerarTrilhaIaD
     `Tempo total de estudo: ${TEMPO_TRILHA_LABELS[pedido.tempo].toLowerCase()} (${TEMPO_TRILHA_MIN[pedido.tempo]} min)`,
     `Formatos: ${pedido.formatos.map((t) => MATERIAL_TIPO_LABELS[t]).join(', ')}`,
     `Priorizar materiais aprovados do acervo: ${pedido.usarAcervo ? 'sim' : 'não; proponha recursos a definir'}`,
+    `Trilha atual: ${pedido.substituir ? 'será substituída pela proposta (os materiais dela podem ser reaproveitados)' : 'continua; a proposta entra depois dela'}`,
     '</pedido>',
   ];
   return linhas.filter(Boolean).join('\n');

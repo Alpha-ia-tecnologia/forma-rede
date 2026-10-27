@@ -374,6 +374,21 @@ test('trilha com IA: proposta com materiais do municipio, salva so o que foi mar
   status(await api('POST', `${rota}/${outra.interacaoId}`, { token: s.token.formador, body: { incluir: [0] } }), 400, 'salvar descartada');
 });
 
+test('trilha com IA: substituir deixa na trilha so as etapas da proposta', async () => {
+  const rota = `/formacoes/${s.formacaoId}/trilha/ia`;
+  const antes = ok(await api('GET', `/formacoes/${s.formacaoId}/trilha`, { token: s.token.formador }), 'trilha').etapas;
+  assert.ok(antes.length > 0, 'a trilha tem etapas para substituir');
+  const p = ok(await api('POST', rota, {
+    token: s.token.formador,
+    body: { objetivo: 'Trocar a trilha atual por um percurso de leitura em voz alta.', quantidade: 3, tempo: 'ate-1h', formatos: ['DOCUMENTO', 'LINK'], usarAcervo: true, substituir: true },
+  }), 'gerar para substituir');
+  const t = ok(await api('POST', `${rota}/${p.interacaoId}`, { token: s.token.formador, body: { incluir: [0, 1] } }), 'substituir');
+  assert.deepEqual(t.etapas.map((e: { titulo: string }) => e.titulo), [p.etapas[0].titulo, p.etapas[1].titulo]);
+  assert.deepEqual(t.etapas.map((e: { ordem: number }) => e.ordem), [1, 2]);
+  const ids = new Set(antes.map((e: { id: string }) => e.id));
+  assert.ok(t.etapas.every((e: { id: string }) => !ids.has(e.id)), 'nenhuma etapa anterior ficou');
+});
+
 test('paineis: Inicio de quem conduz, painel da rede e acompanhamento respondem', async () => {
   ok(await api('GET', '/painel/conducao', { token: s.token.formador }), 'painel de conducao');
   ok(await api('GET', '/dashboard', { token: s.token.gestora }), 'painel da rede');
