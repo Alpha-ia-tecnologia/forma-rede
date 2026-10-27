@@ -178,7 +178,7 @@ Novos usuarios demo: `formador.sp@formarede.gov.br` e `prof.sp@formarede.gov.br`
 |--------|------|--------|
 | GET/POST | `/formacoes` | formacao:read / formacao:create |
 | GET | `/formacoes/:id` | detalhe com modulos, turmas, materiais, atividades e historico |
-| POST | `/formacoes/:id/transicao` | fluxo das 5 etapas (aprovar/devolver/cancelar + justificativa) |
+| POST | `/formacoes/:id/encerrar` · `/formacoes/:id/reabrir` | formacao:transicao — ciclo simples (em andamento ↔ encerrada); quem cria decide, sem aprovação por etapas; fica no histórico e na auditoria |
 | POST | `/formacoes/:id/modulos` e `/turmas` | estruturacao |
 | GET/POST | `/encontros` | agenda por turma |
 | GET | `/encontros/:id/chamada` | lista de presenca |
@@ -196,7 +196,7 @@ Novos usuarios demo: `formador.sp@formarede.gov.br` e `prof.sp@formarede.gov.br`
 | POST | `/inscricoes/:id/certificado` | emite se frequencia minima + atividades avaliadas |
 | GET | `/certificados/validar/:codigo` | **publico** - validacao de certificado |
 
-Paginas web novas: `/formacoes`, `/formacoes/[id]` (stepper do fluxo),
+Paginas web novas: `/formacoes`, `/formacoes/[id]`,
 `/materiais`, `/minhas-formacoes` e `/validar/[codigo]` (publica).
 
 Status de validacao: `tsc` verde em contracts, db, api, web e worker
@@ -335,8 +335,10 @@ O sistema organiza cada tela pelo que a pessoa vem fazer:
 - **Quem conduz (formador, gestão, curadoria):** "O que precisa de você" (chamada pendente, entregas
   aguardando devolutiva, etapas em curadoria e o próximo encontro), a trilha, "Atividades e entregas"
   (fila por atividade, nota e devolutiva ou pedido de ajuste sem sair da página, nova atividade) e os
-  encontros com a situação da chamada. Quem decide o fluxo vê "Etapa do processo" com o histórico e
-  quem decidiu; cancelar pede motivo e confirmação.
+  encontros com a situação da chamada. Sem aprovação por etapas: a formação nasce
+  em andamento (o checklist "Preparar a formação" aparece até haver turma com encontros) e quem a criou
+  usa "Encerrar a formação", no fim da página, com confirmação; encerrada, o aviso vai para o topo, com
+  quem encerrou e quando, e "Reabrir".
 
 | Método | Rota | Acesso |
 |--------|------|--------|

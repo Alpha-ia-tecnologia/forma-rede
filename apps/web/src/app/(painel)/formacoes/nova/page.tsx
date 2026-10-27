@@ -1,12 +1,15 @@
 'use client';
 // Assistente de criacao de formacao em 4 etapas: identificacao, estrutura
-// (modalidade, cargas e modulos), turmas e revisao. Cria a formacao e, em
-// seguida, modulos e turmas; falhas parciais sao reportadas com honestidade.
+// (modalidade, cargas e modulos), turmas e revisao. A barra presa ao fim da tela oferece
+// "Salvar formacao" em qualquer passo assim que o obrigatorio (o titulo) esta preenchido;
+// salvo, volta para a lista de formacoes com a confirmacao. Cria a formacao e, em seguida,
+// modulos e turmas; falhas parciais sao reportadas com honestidade.
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { MODALIDADES } from '@formarede/contracts';
 import { api, getUser } from '../../../../lib/api';
+import { useSaidaProtegida } from '../../../../lib/saida';
 import { PageHeader, Note, Field, Icon } from '../../ui';
 
 interface ModuloDraft { titulo: string; }
@@ -45,6 +48,9 @@ export default function NovaFormacaoPage() {
   // Submissao
   const [erro, setErro] = useState<string | null>(null);
   const [criando, setCriando] = useState(false);
+  // Algo preenchido e ainda nao salvo: sair pela navegacao pergunta antes.
+  const preenchido = [titulo, tema, subtema, publicoAlvo, objetivos].some((v) => v.trim() !== '') || modulos.length > 0 || turmas.length > 0;
+  const saida = useSaidaProtegida(preenchido && !criando);
 
   if (!podeCriar) {
     return (
@@ -95,12 +101,8 @@ export default function NovaFormacaoPage() {
         try { await api.post(`/formacoes/${f.id}/turmas`, { nome: t.nome, vagas: t.vagas }); }
         catch { falhas.push(`turma "${t.nome}"`); }
       }
-      if (falhas.length) {
-        setErro(`Formação criada, mas houve falha ao criar: ${falhas.join(', ')}. Você pode adicioná-los na página da formação.`);
-        setTimeout(() => router.push(`/formacoes/${f.id}`), 2600);
-      } else {
-        router.push(`/formacoes/${f.id}`);
-      }
+      // A lista mostra "Formacao salva" (e o que nao entrou, se algo falhou) com a nova em destaque.
+      router.push(`/formacoes?salva=${f.id}${falhas.length ? `&pendente=${encodeURIComponent(falhas.join(', '))}` : ''}`);
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao criar a formação.');
       setCriando(false);
@@ -119,7 +121,7 @@ export default function NovaFormacaoPage() {
   return (
     <div style={{ maxWidth: 760 }}>
       <PageHeader titulo="Nova formação"
-        descricao="A formação nasce em Planejamento e avança pelo fluxo até a certificação.">
+        descricao="A formação nasce em andamento: depois de criada, você abre a turma, agenda os encontros e monta a trilha na página dela.">
         <Link href="/formacoes" className="btn btn-ghost">Cancelar</Link>
       </PageHeader>
 
@@ -139,8 +141,6 @@ export default function NovaFormacaoPage() {
           );
         })}
       </ol>
-
-      {erro && <Note tom="danger">{erro}</Note>}
 
       {/* Passo 1 - Identificacao */}
       {passo === 0 && (
@@ -282,27 +282,48 @@ export default function NovaFormacaoPage() {
           {turmas.length > 0 && (
             <p style={{ fontSize: 'var(--text-xs)', margin: '8px 0 0' }}><b>Turmas:</b> {turmas.map((t) => `${t.nome} (${t.vagas} vagas)`).join(' · ')}</p>
           )}
-          <Note tom="info">A formação será criada na etapa <b>Planejamento</b>. Materiais, atividades e pesquisas são vinculados depois, na página da formação.</Note>
+          <Note tom="info">Materiais, atividades e pesquisas são vinculados depois, na página da formação.</Note>
         </section>
       )}
 
-      {/* Navegacao */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 18 }}>
-        <button type="button" className="btn btn-ghost" onClick={() => setPasso((p) => p - 1)} disabled={passo === 0 || criando}>
-          Voltar
-        </button>
-        {passo < PASSOS.length - 1 ? (
-          <button type="button" className="btn btn-primary" onClick={() => setPasso((p) => p + 1)} disabled={!podeAvancar}
-            title={podeAvancar ? undefined : 'Informe um título com ao menos 3 caracteres.'}>
-            Continuar
-            <Icon size={16}><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></Icon>
-          </button>
-        ) : (
-          <button type="button" className="btn btn-primary" onClick={criar} disabled={criando}>
-            {criando ? 'Criando formação...' : 'Criar formação'}
-          </button>
-        )}
-      </div>
+      {/* Navegacao: presa ao fim da tela, com o salvar sempre a vista quando o obrigatorio esta preenchido */}
+      {saida.destino ? (
+        <div className="trilha-barra form-barra" data-estado="saindo" role="alertdialog" aria-label="Sair sem salvar?">
+          <p className="trilha-barra-resumo">
+            <strong>Sair sem salvar?</strong>
+            <span>A formação ainda não foi salva e o que você preencheu se perde.</span>
+          </p>
+          <div className="trilha-barra-acoes">
+            <button type="button" className="btn btn-primary" autoFocus onClick={saida.ficar}>Continuar preenchendo</button>
+            <button type="button" className="btn btn-ghost" onClick={saida.sair}>Sair sem salvar</button>
+          </div>
+        </div>
+      ) : (
+        <div className="trilha-barra form-barra">
+          <p className="trilha-barra-resumo">
+            {tituloOk
+              ? <><strong>Pronto para salvar</strong><span>{passo < PASSOS.length - 1 ? 'Os outros passos são opcionais: dá para completar depois, na página da formação.' : 'Confira a revisão e salve.'}</span></>
+              : <><strong>Falta o obrigatório</strong><span>Informe o título da formação (ao menos 3 caracteres) para salvar.</span></>}
+          </p>
+          <div className="trilha-barra-acoes">
+            {passo > 0 && (
+              <button type="button" className="btn btn-ghost" onClick={() => setPasso((p) => p - 1)} disabled={criando}>Voltar</button>
+            )}
+            {passo < PASSOS.length - 1 && (
+              <button type="button" className={tituloOk ? 'btn btn-secondary' : 'btn btn-primary'} onClick={() => setPasso((p) => p + 1)} disabled={!podeAvancar || criando}>
+                Continuar
+                <Icon size={16}><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></Icon>
+              </button>
+            )}
+            {tituloOk && (
+              <button type="button" className="btn btn-primary" onClick={criar} disabled={criando}>
+                {criando ? 'Salvando...' : 'Salvar formação'}
+              </button>
+            )}
+          </div>
+          {erro && <p className="campo-erro" role="alert">{erro}</p>}
+        </div>
+      )}
     </div>
   );
 }

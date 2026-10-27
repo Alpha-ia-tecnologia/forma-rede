@@ -34,12 +34,23 @@ export default function FormacoesPage() {
       .then((l) => setMinhas(new Set(l.map((m) => m.formacao.id)))).catch(() => undefined);
   }, [cursista]);
 
+  // Vindo do "Salvar formacao": a confirmacao fica no topo e a nova em destaque na lista.
+  const [salva, setSalva] = useState<{ id: string; pendente: string | null } | null>(null);
+  useEffect(() => {
+    const s = new URLSearchParams(window.location.search);
+    const id = s.get('salva');
+    if (!id) return;
+    setSalva({ id, pendente: s.get('pendente') });
+    window.history.replaceState(null, '', '/formacoes');
+  }, []);
+  const tituloSalva = rows?.find((f) => f.id === salva?.id)?.titulo;
+
   const filtradas = (rows ?? []).filter((f) => f.titulo.toLowerCase().includes(q.trim().toLowerCase()));
 
   return (
     <div>
       <PageHeader titulo={cursista ? 'Formações da rede' : 'Formações'}
-        descricao={cursista ? 'Conheça o que a rede oferece; abra uma formação para ver a trilha e as turmas.' : 'Do planejamento à certificação: abra uma formação para conduzir, acompanhar ou decidir.'}>
+        descricao={cursista ? 'Conheça o que a rede oferece; abra uma formação para ver a trilha e as turmas.' : 'Abra uma formação para preparar, conduzir ou acompanhar.'}>
         {podeCriar && (
           <Link href="/formacoes/nova" className="btn btn-primary">
             <Icon size={17}><path d="M12 5v14" /><path d="M5 12h14" /></Icon>
@@ -49,6 +60,14 @@ export default function FormacoesPage() {
       </PageHeader>
 
       {erro && <ErroCarga mensagem={erro} aoTentar={() => { setErro(null); carregar(); }} />}
+      {salva && (
+        <Note tom={salva.pendente ? 'warn' : 'ok'}>
+          Formação{tituloSalva ? ` “${tituloSalva}”` : ''} salva.
+          {salva.pendente
+            ? ` Não foi possível criar: ${salva.pendente}. Adicione na página da formação.`
+            : ' Abra-a para abrir a turma, agendar os encontros e montar a trilha.'}
+        </Note>
+      )}
 
       {rows && rows.length > 0 && (
         <div className="toolbar">
@@ -64,7 +83,7 @@ export default function FormacoesPage() {
         <EmptyState
           icon={<><path d="M6 4h12v16H8a2 2 0 0 1-2-2V4Z" /><path d="M10 8h5" /></>}
           titulo="Nenhuma formação criada ainda"
-          descricao="O fluxo formativo guia do planejamento à certificação. Comece criando a primeira."
+          descricao="Crie a primeira: depois você abre a turma, agenda os encontros e monta a trilha."
           acao={podeCriar && <Link href="/formacoes/nova" className="btn btn-primary">Criar formação</Link>}
         />
       ) : (
@@ -72,7 +91,7 @@ export default function FormacoesPage() {
           <h2 className="sr-only">Lista de formações</h2>
           <div className="course-grid">
             {filtradas.map((f) => (
-              <Link key={f.id} href={`/formacoes/${f.id}`}>
+              <Link key={f.id} href={`/formacoes/${f.id}`} className={f.id === salva?.id ? 'formacao-nova' : undefined}>
                 <FormacaoCard
                   titulo={f.titulo} modalidade={f.modalidade} cargaHoraria={f.cargaHoraria}
                   rodape={cursista

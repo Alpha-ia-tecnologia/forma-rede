@@ -1,5 +1,5 @@
 'use client';
-// Formacao em preparacao (planejamento, curadoria, desenho): no lugar de "O que precisa de
+// Formacao em preparacao (ainda sem turma com encontros): no lugar de "O que precisa de
 // voce" vazio, os passos para a formacao ficar pronta, na ordem em que acontecem, cada um
 // com a marca de feito e a acao de quem pode fazer. So o proximo passo por fazer tem o
 // botao principal; quem nao tem permissao ve quem faz aquele passo.
@@ -94,7 +94,7 @@ export function PreparacaoFormacao({ formacaoId, modulos, turmas, etapasTrilha, 
           <h2 id="preparar" className="section-title">Preparar a formação</h2>
           <p className="fsec-lead">
             {feitos === passos.length
-              ? 'Tudo pronto. A formação passa para a execução quando a gestão decidir a etapa.'
+              ? 'Tudo pronto para começar.'
               : `${feitos} de ${passos.length} passos prontos. Siga na ordem: cada um aproveita o anterior.`}
           </p>
         </div>

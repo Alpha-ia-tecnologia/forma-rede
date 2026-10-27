@@ -114,7 +114,7 @@ test('gestao cria formacao, modulo e turma', async () => {
     token: s.token.gestora,
     body: { titulo: 'Formacao E2E', tema: 'Leitura', cargaHoraria: 8, freqMinimaPct: 50 },
   }), 'criar formacao');
-  assert.equal(f.etapaFluxo, 'PLANEJAMENTO');
+  assert.equal(f.etapaFluxo, 'EXECUCAO', 'a formacao nasce em andamento');
   s.formacaoId = f.id;
   ok(await api('POST', `/formacoes/${f.id}/modulos`, { token: s.token.gestora, body: { titulo: 'Modulo 1', ordem: 1 } }), 'criar modulo');
   s.turmaId = ok(await api('POST', `/formacoes/${f.id}/turmas`, { token: s.token.gestora, body: { nome: 'Turma E2E', vagas: 2 } }), 'criar turma').id;
@@ -171,15 +171,18 @@ test('Copiloto: o plano gerado e publicado com edicao e aparece como aprovado', 
   assert.ok(planos[0].conteudo.objetivos.includes('Objetivo incluido na revisao'));
 });
 
-test('etapas: devolver pede justificativa; aprovar avanca ate a execucao', async () => {
-  status(await api('POST', `/formacoes/${s.formacaoId}/transicao`, {
-    token: s.token.gestora, body: { decisao: 'DEVOLVIDA' },
-  }), 400, 'devolver sem justificativa');
-  for (let i = 0; i < 3; i++) {
-    ok(await api('POST', `/formacoes/${s.formacaoId}/transicao`, { token: s.token.gestora, body: { decisao: 'APROVADA' } }), `aprovar etapa ${i + 1}`);
-  }
+test('encerramento: quem cria encerra e reabre, e cada vez fica no historico', async () => {
+  const rota = (acao: string) => `/formacoes/${s.formacaoId}/${acao}`;
+  status(await api('POST', rota('encerrar'), { token: s.token.prof1, body: {} }), 403, 'professor encerra');
+  status(await api('POST', rota('reabrir'), { token: s.token.gestora, body: {} }), 400, 'reabrir em andamento');
+  ok(await api('POST', rota('encerrar'), { token: s.token.gestora, body: {} }), 'encerrar');
+  status(await api('POST', rota('encerrar'), { token: s.token.gestora, body: {} }), 400, 'encerrar de novo');
+  assert.equal(ok(await api('GET', `/formacoes/${s.formacaoId}`, { token: s.token.gestora }), 'detalhe').etapaFluxo, 'CONCLUIDA');
+  ok(await api('POST', rota('reabrir'), { token: s.token.gestora, body: {} }), 'reabrir');
   const f = ok(await api('GET', `/formacoes/${s.formacaoId}`, { token: s.token.gestora }), 'detalhe');
   assert.equal(f.etapaFluxo, 'EXECUCAO');
+  assert.deepEqual(f.transicoes.map((x: { paraEtapa: string }) => x.paraEtapa), ['EXECUCAO', 'CONCLUIDA'], 'historico do mais recente ao mais antigo');
+  assert.ok(f.transicoes.every((x: { decididoPor: string | null }) => x.decididoPor === 'Gestora E2E'));
 });
 
 test('inscricoes: professores entram e a turma respeita as vagas', async () => {

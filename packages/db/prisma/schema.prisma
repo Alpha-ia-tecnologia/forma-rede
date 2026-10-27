@@ -311,7 +311,7 @@ model Formacao {
   publicoAlvo   String?            @map("publico_alvo")
   cargaHoraria  Int                @default(0) @map("carga_horaria")
   modalidade    FormacaoModalidade @default(PRESENCIAL)
-  etapaFluxo    EtapaFluxo         @default(PLANEJAMENTO) @map("etapa_fluxo")
+  etapaFluxo    EtapaFluxo         @default(EXECUCAO) @map("etapa_fluxo")
   freqMinimaPct Int                @default(75) @map("freq_minima_pct")
   criadoPorId   String?            @map("criado_por_id") @db.Uuid
   createdAt     DateTime           @default(now()) @map("created_at")

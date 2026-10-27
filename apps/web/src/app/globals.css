@@ -1002,6 +1002,12 @@ fieldset.resp-pergunta > legend + * { clear: both; }
 /* Copiloto (plano com IA) e busca nas listas */
 /* Preparacao da formacao: passos com a acao logo abaixo. */
 .prep-acao { margin-top: var(--space-2); }
+/* Encerrar ou reabrir a formacao: confirmacao em linha, dizendo o que muda */
+.encerrar-confirma { display: grid; gap: var(--space-3); }
+/* Nova formacao: a barra de acao fica presa ao fim da tela; a recem-salva fica em destaque na lista */
+.form-barra { margin-top: 18px; }
+a.formacao-nova > .course-card { box-shadow: 0 0 0 2px var(--brand); }
+.encerrar-confirma p { margin: 0; max-width: 68ch; font-size: var(--text-sm); line-height: 1.55; }
 /* Prazo da atividade: formulario curto no lugar das acoes e a confirmacao no item */
 .prazo-form { display: grid; gap: var(--space-3); max-width: 420px; margin-top: var(--space-3); }
 .prazo-salvo { display: flex; align-items: center; gap: 6px; margin: var(--space-2) 0 0; color: var(--green); font-size: var(--text-sm); font-weight: 500; }
@@ -1173,24 +1179,9 @@ fieldset.resp-pergunta > legend + * { clear: both; }
 .chamada-depois { color: var(--ink-soft); font-style: italic; }
 .enc-situacao { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 
-/* Etapa do processo: a marca diz feita (visto), atual (cheia) ou futura (anel) */
-.proc { display: flex; flex-wrap: wrap; gap: 6px 4px; margin: 0; padding: 0; list-style: none; }
-.proc-etapa { display: inline-flex; align-items: center; gap: 8px; padding: 5px 14px 5px 5px; border-radius: var(--radius-full); color: var(--ink-soft); font-size: var(--text-sm); }
-.proc-marca { display: grid; place-items: center; width: 26px; height: 26px; border-radius: var(--radius-full); box-shadow: inset 0 0 0 1.5px var(--line-strong); font-size: var(--text-xs); font-weight: 700; font-variant-numeric: tabular-nums; }
-.proc-etapa[data-estado='feita'] { color: var(--ink); }
-.proc-etapa[data-estado='feita'] .proc-marca { background: var(--signal-lime); box-shadow: none; color: var(--ink-strong); }
-.proc-etapa[data-estado='atual'] { background: var(--brand-soft); color: var(--ink); font-weight: 600; }
-.proc-etapa[data-estado='atual'] .proc-marca { background: var(--brand); box-shadow: none; color: var(--ink-strong); }
-.proc-acoes { display: flex; flex-wrap: wrap; gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--line); }
-.proc-acoes .note { flex-basis: 100%; margin: 0; }
-.proc-aviso { margin: 0; font-size: var(--text-sm); }
-.proc-decisao[data-perigo='true'] .proc-aviso { color: var(--coral); font-weight: 500; }
+/* Botao de perigo cheio (confirmacao de acao destrutiva) */
 .btn-perigo { background: var(--coral); color: var(--paper-raised); }
 .btn-perigo:hover:not(:disabled) { background: var(--coral); filter: brightness(0.92); }
-.proc-historico summary { width: fit-content; cursor: pointer; color: var(--brand-strong); font-size: var(--text-sm); font-weight: 500; }
-.proc-hist { display: grid; gap: 12px; margin: 12px 0 0; padding: 0; list-style: none; }
-.proc-hist p { margin: 0; font-size: var(--text-sm); }
-.proc-hist-meta, .proc-hist-motivo { color: var(--ink-soft); }
 
 /* Sobre a formacao: recolhido por padrao */
 .sobre > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; cursor: pointer; list-style: none; }

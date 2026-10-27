@@ -1,6 +1,6 @@
-// Formacoes: CRUD, modulos, turmas e o fluxo das 5 etapas (RF-017..034).
-// Avancar exige decisao APROVADA; DEVOLVIDA volta uma etapa com justificativa;
-// CANCELADA encerra. Toda transicao vira EtapaTransicao + AuditLog.
+// Formacoes: CRUD, modulos e turmas (RF-017..034). Ciclo simples: a formacao nasce em
+// andamento e quem a cria a encerra (ou reabre); nao ha aprovacao por etapas, porque quem
+// cria e quem valida. Encerrar e reabrir viram EtapaTransicao (historico) + AuditLog.
 import {
   BadRequestException,
   Body,
@@ -25,14 +25,12 @@ import {
   createModuloSchema,
   CreateTurmaDto,
   createTurmaSchema,
-  TransicaoEtapaDto,
-  transicaoEtapaSchema,
+  formacaoEncerrada,
 } from '@formarede/contracts';
 import { CurrentUser, RequirePermissions } from '../../common/security';
 import { ZodValidationPipe } from '../../common/http';
 import { AuditService } from '../../audit/audit.module';
 
-const ORDEM: string[] = ['PLANEJAMENTO', 'CURADORIA', 'DESENHO', 'EXECUCAO', 'AVALIACAO', 'CONCLUIDA'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const tem = (u: AuthUser, p: string) => u.permissions.includes('*') || u.permissions.includes(p);
 /** Quem conduz ou acompanha a formacao (o cursista tem a propria participacao). */
@@ -140,49 +138,28 @@ export class FormacoesService {
     return formacao;
   }
 
-  async transicao(tenantId: string, userId: string, id: string, dto: TransicaoEtapaDto) {
+  /** Encerrar (fim da formacao) ou reabrir (encerrada por engano): quem cria decide. */
+  async encerramento(tenantId: string, userId: string, id: string, encerrar: boolean) {
     const db = forTenant(tenantId);
     const formacao = await db.formacao.findFirst({ where: { id } });
     if (!formacao) throw new NotFoundException('Formacao nao encontrada.');
-
-    const atual = formacao.etapaFluxo as string;
-    if (atual === 'CONCLUIDA' || atual === 'CANCELADA') {
-      throw new BadRequestException('Formacao ja encerrada.');
+    const atual = String(formacao.etapaFluxo);
+    if (encerrar === formacaoEncerrada(atual)) {
+      throw new BadRequestException(encerrar ? 'A formação já está encerrada.' : 'A formação já está em andamento.');
     }
-
-    let proxima: string;
-    if (dto.decisao === 'CANCELADA') {
-      proxima = 'CANCELADA';
-    } else if (dto.decisao === 'DEVOLVIDA') {
-      const idx = ORDEM.indexOf(atual);
-      if (idx <= 0) throw new BadRequestException('Nao ha etapa anterior para devolver.');
-      proxima = ORDEM[idx - 1] as string;
-    } else {
-      const idx = ORDEM.indexOf(atual);
-      if (idx < 0 || idx >= ORDEM.length - 1) {
-        throw new BadRequestException('Nao ha proxima etapa.');
-      }
-      proxima = ORDEM[idx + 1] as string;
-    }
-
+    const proxima = encerrar ? 'CONCLUIDA' : 'EXECUCAO';
     const [atualizada] = await Promise.all([
       db.formacao.update({ where: { id }, data: { etapaFluxo: proxima as never } }),
       db.etapaTransicao.create({
         data: {
-          tenantId,
-          formacaoId: id,
-          deEtapa: atual as never,
-          paraEtapa: proxima as never,
-          decisao: dto.decisao,
-          justificativa: dto.justificativa,
-          decididoPorId: userId,
+          tenantId, formacaoId: id, deEtapa: atual as never, paraEtapa: proxima as never,
+          decisao: encerrar ? 'APROVADA' : 'DEVOLVIDA', decididoPorId: userId,
         },
       }),
     ]);
     await this.audit.record({
-      action: dto.decisao === 'APROVADA' ? 'APPROVE' : 'REJECT',
-      entity: 'formacao', entityId: id, tenantId, userId,
-      metadata: { de: atual, para: proxima, justificativa: dto.justificativa },
+      action: 'UPDATE', entity: 'formacao', entityId: id, tenantId, userId,
+      metadata: { encerramento: encerrar ? 'encerrou' : 'reabriu', de: atual, para: proxima },
     });
     return atualizada;
   }
@@ -231,14 +208,16 @@ export class FormacoesController {
     return this.svc.create(user.tenantId, user.id, dto);
   }
 
-  @Post(':id/transicao')
+  @Post(':id/encerrar')
   @RequirePermissions('formacao:transicao')
-  transicao(
-    @CurrentUser() user: AuthUser,
-    @Param('id') id: string,
-    @Body(new ZodValidationPipe(transicaoEtapaSchema)) dto: TransicaoEtapaDto,
-  ) {
-    return this.svc.transicao(user.tenantId, user.id, id, dto);
+  encerrar(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.svc.encerramento(user.tenantId, user.id, id, true);
+  }
+
+  @Post(':id/reabrir')
+  @RequirePermissions('formacao:transicao')
+  reabrir(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.svc.encerramento(user.tenantId, user.id, id, false);
   }
 
   @Post(':id/modulos')

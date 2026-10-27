@@ -10,7 +10,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import type { LucideIcon } from 'lucide-react';
-import { Award, Check, ClipboardCheck, ClipboardList, Flag, Hourglass, Layers, Library, MessageSquareText, PenLine, Route, Send, UserRoundX } from 'lucide-react';
+import { Award, Check, ClipboardCheck, ClipboardList, Hourglass, Layers, Library, MessageSquareText, PenLine, Route, Send, UserRoundX } from 'lucide-react';
+import { formacaoEncerrada } from '@formarede/contracts';
 import type { AcompanhamentoFrequencia, AuthUser, EtapaFluxo, FormacaoRef, MinhaFormacao, PainelConducao, PlanoAprovado, TrilhaFormacao } from '@formarede/contracts';
 import { api, getUser } from '../../../lib/api';
 import { fmtData, fmtDia, fmtHora, prazoEncerrado, quando } from '../../../lib/datas';
@@ -66,7 +67,6 @@ export default function InicioPage() {
 
 // ---------- Plano aprovado esperando os modulos ----------
 
-const PREPARACAO: EtapaFluxo[] = ['PLANEJAMENTO', 'CURADORIA', 'DESENHO'];
 interface FormacaoResumo { id: string; titulo: string; etapaFluxo: EtapaFluxo; _count?: { modulos: number } }
 
 /**
@@ -81,7 +81,7 @@ function usePlanosSemModulos(user: AuthUser | null): FormacaoRef[] {
     let vivo = true;
     api.get<FormacaoResumo[]>('/formacoes')
       .then(async (fs) => {
-        const candidatas = fs.filter((f) => PREPARACAO.includes(f.etapaFluxo) && (f._count?.modulos ?? 0) === 0);
+        const candidatas = fs.filter((f) => !formacaoEncerrada(f.etapaFluxo) && (f._count?.modulos ?? 0) === 0);
         const comPlano = await Promise.all(candidatas.map((f) =>
           api.get<PlanoAprovado[]>(`/ia/formacoes/${f.id}/planos`).then((ps) => (ps.length ? { id: f.id, titulo: f.titulo } : null)).catch(() => null)));
         if (vivo) setLista(comPlano.filter((f): f is FormacaoRef => !!f));
@@ -369,7 +369,6 @@ interface FormacaoEtapa { id: string; titulo: string; etapaFluxo: EtapaFluxo }
 function InicioGestao({ user, tenantNome }: { user: AuthUser; tenantNome: string | null }) {
   const veFrequencia = pode(user, 'frequencia:acompanhar');
   const curadoria = pode(user, 'material:aprovar');
-  const decideEtapa = pode(user, 'formacao:transicao');
   // undefined: carregando; null: sem permissao ou falhou (a tarefa nao aparece).
   const [freq, setFreq] = useState<AcompanhamentoFrequencia | null | undefined>(veFrequencia ? undefined : null);
   const [materiais, setMateriais] = useState<MaterialStatus[] | null | undefined>(curadoria ? undefined : null);
@@ -390,13 +389,6 @@ function InicioGestao({ user, tenantNome }: { user: AuthUser; tenantNome: string
       chave: 'curadoria', prioridade: 1, icone: Library,
       texto: <><strong>{plural(emRevisao, 'material espera', 'materiais esperam')}</strong> a sua revisão; só os aprovados chegam às formações e à IA.</>,
       acao: { href: '/materiais', rotulo: 'Revisar materiais' },
-    });
-  }
-  for (const f of decideEtapa ? formacoes?.filter((x) => x.etapaFluxo === 'AVALIACAO') ?? [] : []) {
-    tarefas.push({
-      chave: `etapa-${f.id}`, prioridade: 0, icone: Flag,
-      texto: <><strong>{f.titulo}</strong> está em avaliação e espera a decisão de encerrar.</>,
-      acao: { href: `/formacoes/${f.id}`, rotulo: 'Decidir a etapa' },
     });
   }
   const r = freq?.resumo;

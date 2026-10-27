@@ -52,7 +52,7 @@ Caixa de frase em títulos, botões e selos.
 - Início por papel: a primeira seção é a próxima ação ("Para fazer agora" / "O que precisa de você"),
   em linhas `.pend` (ícone + texto + contexto + uma ação; só a primeira é principal); indicadores da
   rede vêm depois e só para quem acompanha a rede. Nada de número gigante como destaque. A gestão
-  (`report:read`) abre em "O que depende de você" (curadoria, formação esperando a decisão de encerrar,
+  (`report:read`) abre em "O que depende de você" (curadoria,
   professores abaixo do mínimo, chamadas pendentes) e depois "Como está a rede": uma frase com o tamanho
   da rede, três quadros (desempenho, frequência por situação, entregas) e o resto em "Mais indicadores".
   Números de frequência saem da mesma conta da tela de Frequência.
@@ -77,7 +77,12 @@ Caixa de frase em títulos, botões e selos.
   bloco mexido ganha "Editado"); o pedido fica fixo acima e a soma das horas é conferida com a carga da formação. O plano aprovado mora na seção "Plano formativo"
   da formação, com quem aprovou, quando, fontes e histórico. O amarelo fica só no botão que abre o Assistente.
 - Cada tela define o título da aba ("Encontros · Formarede") pelo `PageHeader` (`useTituloDaAba`).
-- Formação em preparação (planejamento, curadoria, desenho): a primeira seção é "Preparar a formação", os
+- Ciclo da formação sem aprovação por etapas (quem cria é quem valida): nasce "Em andamento" e termina em
+  "Encerrada" pelo "Encerrar a formação" no fim da página (confirmação em linha; encerrada, o aviso sobe ao
+  topo com quem e quando, e "Reabrir"). Nova formação: a barra presa ao fim da tela mostra "Salvar formação"
+  em qualquer passo assim que o obrigatório (título) está preenchido; salvo, a lista de formações confirma e
+  destaca a nova.
+- Formação em preparação (ainda sem turma com encontros): a primeira seção é "Preparar a formação", os
   passos em ordem (plano, módulos, trilha, turma, encontros) com `Requisito`; só o próximo passo por fazer
   tem o botão principal, e quem não pode fazer um passo lê quem faz.
 - Números para a gestão em texto, não em blocos de número grande: `dl.rel-numeros` (rótulo, valor, apoio),

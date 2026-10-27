@@ -6,13 +6,11 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Download } from 'lucide-react';
-import { ETAPA_FLUXO_LABELS, type LinhaRelatorioConclusao } from '@formarede/contracts';
+import { ETAPA_FLUXO_LABELS, formacaoEncerrada, type LinhaRelatorioConclusao } from '@formarede/contracts';
 import { api, getUser } from '../../../lib/api';
 import { plural } from '../../../lib/texto';
 import { PageHeader, ListSkeleton, ErroCarga } from '../ui';
 
-/** Etapas em que a conclusao ja diz algo (antes disso a formacao esta em andamento). */
-const FECHANDO = ['AVALIACAO', 'CONCLUIDA'];
 
 function baixarCsv(filename: string, conteudo: string) {
   const blob = new Blob(['﻿' + conteudo], { type: 'text/csv;charset=utf-8' });
@@ -88,7 +86,8 @@ export default function RelatoriosPage() {
 }
 
 function LinhaConclusao({ l }: { l: LinhaRelatorioConclusao }) {
-  const fechando = FECHANDO.includes(l.etapaFluxo);
+  // A conclusao so diz algo depois de encerrada; antes disso a formacao esta em andamento.
+  const fechando = formacaoEncerrada(l.etapaFluxo);
   const abaixoDoMinimo = l.frequenciaMediaPct !== null && l.frequenciaMediaPct < l.minimoPct;
   return (
     <li className="fitem rel-linha">

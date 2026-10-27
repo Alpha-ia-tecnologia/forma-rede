@@ -110,6 +110,11 @@ export const ETAPAS_ENSINO = [
   'EJA', 'EDUCACAO_ESPECIAL', 'ESCOLA_DO_CAMPO', 'MULTISSERIADA',
 ] as const;
 export const MODALIDADES = ['PRESENCIAL', 'VIRTUAL', 'HIBRIDA'] as const;
+/**
+ * Ciclo da formacao: Em andamento (EXECUCAO) e Encerrada (CONCLUIDA). Quem cria a formacao
+ * e quem a valida, entao nao ha aprovacao por etapas; as demais etapas so existem em dados
+ * antigos (CANCELADA conta como encerrada).
+ */
 export const ETAPAS_FLUXO = [
   'PLANEJAMENTO', 'CURADORIA', 'DESENHO', 'EXECUCAO', 'AVALIACAO', 'CONCLUIDA', 'CANCELADA',
 ] as const;
@@ -118,11 +123,16 @@ export const ETAPA_FLUXO_LABELS: Record<EtapaFluxo, string> = {
   PLANEJAMENTO: 'Planejamento',
   CURADORIA: 'Curadoria',
   DESENHO: 'Desenho pedagógico',
-  EXECUCAO: 'Execução',
+  EXECUCAO: 'Em andamento',
   AVALIACAO: 'Avaliação e reflexão',
-  CONCLUIDA: 'Concluída',
+  CONCLUIDA: 'Encerrada',
   CANCELADA: 'Cancelada',
 };
+/** Encerrada: sai das listas de formacoes em andamento e entra nos relatorios de conclusao. */
+export function formacaoEncerrada(etapa: string): boolean {
+  return etapa === 'CONCLUIDA' || etapa === 'CANCELADA';
+}
+
 export const MATERIAL_TIPOS = [
   'DOCUMENTO', 'APRESENTACAO', 'VIDEO', 'AUDIO', 'IMAGEM', 'PLANILHA', 'LINK', 'PODCAST',
 ] as const;
@@ -181,13 +191,6 @@ export const createFormacaoSchema = z.object({
 });
 export type CreateFormacaoDto = z.infer<typeof createFormacaoSchema>;
 
-export const transicaoEtapaSchema = z.object({
-  decisao: z.enum(['APROVADA', 'DEVOLVIDA', 'CANCELADA']),
-  justificativa: z.string().optional(),
-}).refine((d) => d.decisao === 'APROVADA' || !!d.justificativa?.trim(), {
-  message: 'Justificativa é obrigatória ao devolver ou cancelar.',
-});
-export type TransicaoEtapaDto = z.infer<typeof transicaoEtapaSchema>;
 
 export const createModuloSchema = z.object({
   titulo: z.string().min(2),

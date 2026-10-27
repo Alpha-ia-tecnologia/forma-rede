@@ -61,7 +61,7 @@ const formacoes: Record<string, unknown>[] = [
   {
     id: 'f2', titulo: 'BNCC na Prática: Matemática', tema: 'Pensamento computacional',
     objetivos: 'Integrar habilidades da BNCC ao cotidiano da sala de aula.',
-    cargaHoraria: 30, modalidade: 'HIBRIDA', etapaFluxo: 'PLANEJAMENTO', freqMinimaPct: 75,
+    cargaHoraria: 30, modalidade: 'HIBRIDA', etapaFluxo: 'EXECUCAO', freqMinimaPct: 75,
     _count: { turmas: 0, modulos: 0, atividades: 0 },
     modulos: [], turmas: [], materiais: [], atividades: [], transicoes: [],
   },
@@ -241,7 +241,7 @@ function relConclusaoDemo(): LinhaRelatorioConclusao[] {
   const r = acompanhamentoDemo(new URLSearchParams()).resumo;
   return [
     { formacao: 'Alfabetização na Idade Certa', etapaFluxo: 'EXECUCAO', inscritos: r.professores, certificados: 0, taxaConclusaoPct: 0, frequenciaMediaPct: r.frequenciaMediaPct, minimoPct: 75, abaixoDoMinimo: r.abaixoDoMinimo },
-    { formacao: 'BNCC na Prática: Matemática', etapaFluxo: 'PLANEJAMENTO', inscritos: 0, certificados: 0, taxaConclusaoPct: null, frequenciaMediaPct: null, minimoPct: 75, abaixoDoMinimo: 0 },
+    { formacao: 'BNCC na Prática: Matemática', etapaFluxo: 'EXECUCAO', inscritos: 0, certificados: 0, taxaConclusaoPct: null, frequenciaMediaPct: null, minimoPct: 75, abaixoDoMinimo: 0 },
     { formacao: 'Educação inclusiva na prática', etapaFluxo: 'CONCLUIDA', inscritos: 32, certificados: 26, taxaConclusaoPct: 81, frequenciaMediaPct: 86, minimoPct: 75, abaixoDoMinimo: 4 },
   ];
 }
@@ -768,7 +768,7 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
         ],
         topFormacoes: [
           { id: 'f1', titulo: 'Alfabetização na Idade Certa', etapaFluxo: 'EXECUCAO', modalidade: 'PRESENCIAL', cargaHoraria: 40, inscritos: 24 },
-          { id: 'f2', titulo: 'BNCC na Prática: Matemática', etapaFluxo: 'PLANEJAMENTO', modalidade: 'HIBRIDA', cargaHoraria: 30, inscritos: 0 },
+          { id: 'f2', titulo: 'BNCC na Prática: Matemática', etapaFluxo: 'EXECUCAO', modalidade: 'HIBRIDA', cargaHoraria: 30, inscritos: 0 },
         ],
       },
     });
@@ -811,7 +811,7 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
       publicoAlvo: (body?.publicoAlvo as string) ?? null,
       cargaHoraria: (body?.cargaHoraria as number) ?? 0,
       modalidade: (body?.modalidade as string) ?? 'PRESENCIAL',
-      etapaFluxo: 'PLANEJAMENTO',
+      etapaFluxo: 'EXECUCAO',
       freqMinimaPct: (body?.freqMinimaPct as number) ?? 75,
       _count: { turmas: 0, modulos: 0, atividades: 0 },
       modulos: [], turmas: [], materiais: [], atividades: [], transicoes: [],
@@ -822,17 +822,17 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
   const fDetail = p.match(/^\/formacoes\/([^/]+)$/);
   // Copia: a tela recarrega o detalhe depois de mexer na trilha e precisa de um objeto novo.
   if (fDetail && method === 'GET') return as(structuredClone(formacoes.find((x) => x.id === fDetail[1]) ?? formacoes[0]));
-  if (match(p, /^\/formacoes\/[^/]+\/transicao$/)) {
-    const id = p.split('/')[2];
-    const f = formacoes.find((x) => x.id === id);
-    if (f) {
-      const ordem = ['PLANEJAMENTO', 'CURADORIA', 'DESENHO', 'EXECUCAO', 'AVALIACAO', 'CONCLUIDA'];
-      const atual = f.etapaFluxo as string;
-      const d = body?.decisao as string;
-      const idx = ordem.indexOf(atual);
-      f.etapaFluxo = d === 'CANCELADA' ? 'CANCELADA' : d === 'DEVOLVIDA' ? ordem[Math.max(0, idx - 1)] : ordem[Math.min(ordem.length - 1, idx + 1)];
-    }
-    return as(f ?? {});
+  // Encerrar ou reabrir (quem cria decide): fica no historico, como na API.
+  const encerramento = p.match(/^\/formacoes\/([^/]+)\/(encerrar|reabrir)$/);
+  if (encerramento && method === 'POST') {
+    const f = formacoes.find((x) => x.id === encerramento[1]);
+    if (!f) throw new Error('Formação não encontrada.');
+    const de = f.etapaFluxo as string;
+    const para = encerramento[2] === 'encerrar' ? 'CONCLUIDA' : 'EXECUCAO';
+    if ((para === 'CONCLUIDA') === (de === 'CONCLUIDA' || de === 'CANCELADA')) throw new Error(para === 'CONCLUIDA' ? 'A formação já está encerrada.' : 'A formação já está em andamento.');
+    f.etapaFluxo = para;
+    (f.transicoes as unknown[]).unshift({ id: 'tr' + Date.now(), deEtapa: de, paraEtapa: para, decisao: para === 'CONCLUIDA' ? 'APROVADA' : 'DEVOLVIDA', justificativa: null, createdAt: new Date().toISOString(), decididoPor: usuarioDemo()?.nome ?? null });
+    return as(f);
   }
   const fSub = p.match(/^\/formacoes\/([^/]+)\/(modulos|turmas|atividades|avaliacoes)$/);
   if (fSub) {

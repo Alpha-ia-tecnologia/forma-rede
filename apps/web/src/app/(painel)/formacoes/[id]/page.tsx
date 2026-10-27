@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { MessageCircleQuestion } from 'lucide-react';
-import { ETAPA_FLUXO_LABELS } from '@formarede/contracts';
+import { ETAPA_FLUXO_LABELS, formacaoEncerrada } from '@formarede/contracts';
 import type { AcompanhamentoFormacao, EtapaFluxo, ParticipacaoFormacao, TrilhaFormacao } from '@formarede/contracts';
 import { api, getUser } from '../../../../lib/api';
 import { abrirAssistente } from '../../../../lib/assistente';
@@ -16,7 +16,7 @@ import { PageHeader, StatusBadge, Note, ListSkeleton, type Tom } from '../../ui'
 import { TrilhaFormativa } from './trilha';
 import { AtividadesCursista, EncontrosCursista, NaoInscrito, ResumoCursista } from './cursista';
 import { AtencaoConducao, AtividadesConducao, EncontrosConducao } from './conducao';
-import { ProcessoFormacao, type Transicao } from './processo';
+import { EncerramentoFormacao, type Transicao } from './processo';
 import { PlanoFormativo } from './plano';
 import { PreparacaoFormacao } from './preparacao';
 
@@ -39,8 +39,6 @@ interface Detalhe {
 
 /** Quem conduz ou acompanha a formacao (mesma regra do painel na API). */
 const CONDUZ = ['trilha:editar', 'frequencia:registrar', 'entrega:read', 'inscricao:read', 'formacao:update'];
-/** Antes da execucao, a primeira secao de quem conduz e a lista de preparacao. */
-const PREPARACAO: EtapaFluxo[] = ['PLANEJAMENTO', 'CURADORIA', 'DESENHO'];
 const STATUS_MATERIAL: Record<string, { texto: string; tom: Tom }> = {
   APROVADO: { texto: 'Aprovado', tom: 'good' }, EM_REVISAO: { texto: 'Em revisão', tom: 'warn' },
   REJEITADO: { texto: 'Recusado', tom: 'danger' }, RASCUNHO: { texto: 'Rascunho', tom: 'neutral' },
@@ -105,6 +103,9 @@ export default function FormacaoDetalhePage() {
   if (!f) return <ListSkeleton linhas={3} altura={110} />;
 
   const mod = modalidade(f.modalidade);
+  const encerrada = formacaoEncerrada(f.etapaFluxo);
+  // Enquanto nao ha turma com encontros, a primeira secao de quem conduz e a preparacao.
+  const emPreparacao = !encerrada && !f.turmas.some((t) => t._count.encontros > 0);
   // O cursista ve a etapa no idioma de quem estuda; quem conduz, o fluxo do processo.
   const etapa = cursista ? etapaParaCursista(f.etapaFluxo) : ETAPA_FLUXO_LABELS[f.etapaFluxo];
   const naTrilha = new Set(trilha?.etapas.flatMap((e) => (e.material ? [e.material.id] : [])) ?? []);
@@ -141,20 +142,20 @@ export default function FormacaoDetalhePage() {
         </>
       ) : conduz ? (
         <>
-          {PREPARACAO.includes(f.etapaFluxo) ? (
+          {encerrada && (
+            <EncerramentoFormacao formacaoId={id} etapa={f.etapaFluxo} transicoes={f.transicoes} podeDecidir={pode('formacao:transicao')} aoMudar={carregarDetalhe} />
+          )}
+          {emPreparacao ? (
             <PreparacaoFormacao formacaoId={id} modulos={f.modulos.length} turmas={f.turmas} etapasTrilha={trilha ? trilha.etapas.filter((e) => e.material).length : null}
               etapasADefinir={trilha ? trilha.etapas.filter((e) => !e.material).length : 0}
               pode={pode} aoMudar={() => { carregarDetalhe(); carregarAcompanhamento(); }} />
           ) : acomp ? (
             <AtencaoConducao a={acomp} pendentesCuradoria={pendentesCuradoria} podeRegistrar={pode('frequencia:registrar')} aoAvaliar={avaliar}
-              encerrada={f.etapaFluxo === 'CONCLUIDA' || f.etapaFluxo === 'CANCELADA'} />
+              encerrada={encerrada} />
           ) : erroAcomp ? <Note tom="danger">{erroAcomp}</Note> : <ListSkeleton linhas={1} altura={200} />}
-          {pode('formacao:transicao') && (
-            <ProcessoFormacao formacaoId={id} etapa={f.etapaFluxo} transicoes={f.transicoes} podeDecidir aoMudar={carregarDetalhe} />
-          )}
           {pode('ia:usar') && (
             <PlanoFormativo formacaoId={id} modulos={f.modulos.length} podeCriarModulos={pode('modulo:create')} aoCriarModulos={carregarDetalhe}
-              ocultarVazio={PREPARACAO.includes(f.etapaFluxo)} />
+              ocultarVazio={emPreparacao} />
           )}
           {trilhaFormativa}
           {acomp && (
@@ -164,10 +165,14 @@ export default function FormacaoDetalhePage() {
               aoMudar={() => { carregarAcompanhamento(); carregarDetalhe(); }} />
           )}
           {acomp && <EncontrosConducao a={acomp} podeRegistrar={pode('frequencia:registrar')} podeAgendar={pode('encontro:create')} />}
+          {/* Encerrar e a ultima coisa a fazer: fica no fim da pagina (encerrada, o aviso vai para o topo). */}
+          {!encerrada && pode('formacao:transicao') && (
+            <EncerramentoFormacao formacaoId={id} etapa={f.etapaFluxo} transicoes={f.transicoes} podeDecidir aoMudar={carregarDetalhe} />
+          )}
         </>
       ) : (
         <>
-          <ProcessoFormacao formacaoId={id} etapa={f.etapaFluxo} transicoes={f.transicoes} podeDecidir={false} aoMudar={carregarDetalhe} />
+          <EncerramentoFormacao formacaoId={id} etapa={f.etapaFluxo} transicoes={f.transicoes} podeDecidir={false} aoMudar={carregarDetalhe} />
           {trilhaFormativa}
         </>
       )}

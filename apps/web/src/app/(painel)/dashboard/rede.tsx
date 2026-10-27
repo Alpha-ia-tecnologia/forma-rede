@@ -6,7 +6,7 @@
 // Quadro cinza com cartoes brancos; valor sempre tambem em texto.
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ETAPAS_FLUXO, ETAPA_FLUXO_LABELS } from '@formarede/contracts';
+import { ETAPA_FLUXO_LABELS } from '@formarede/contracts';
 import type { AcompanhamentoFrequencia, AuthUser, EtapaFluxo } from '@formarede/contracts';
 import { api } from '../../../lib/api';
 import { decimal, plural } from '../../../lib/texto';
@@ -61,7 +61,8 @@ const FREQUENCIA_DEFS = [
   { chave: 'MEDIO', label: 'De 75% a 89%', color: 'var(--signal-yellow)' },
   { chave: 'ALTO', label: '90% ou mais', color: 'var(--signal-lime)' },
 ];
-const FLUXO = ETAPAS_FLUXO.filter((e) => e !== 'CANCELADA');
+/** O ciclo da formacao: em andamento e encerrada (os dados antigos das outras etapas nao aparecem). */
+const FLUXO: EtapaFluxo[] = ['EXECUCAO', 'CONCLUIDA'];
 
 function segmentos(rows: CatCount[] | undefined, defs: { chave: string; label: string; color: string }[]): Segmento[] {
   const map = new Map((rows ?? []).map((r) => [r.chave, r.n]));
@@ -100,7 +101,7 @@ export function PainelRede({ user, tenantNome, frequencia, formacoes }: {
     })()
     : segmentos(a?.frequenciaFaixas, FREQUENCIA_DEFS);
   const tamanho = a
-    ? `${plural(a.kpis.professoresAtivos, 'professor', 'professores')} em formação, ${plural(a.kpis.formacoesAtivas, 'formação', 'formações')} em execução, ${plural(res?.certificadosEmitidos ?? 0, 'certificado emitido', 'certificados emitidos')} e ${a.kpis.horasOfertadas} h ofertadas.`
+    ? `${plural(a.kpis.professoresAtivos, 'professor', 'professores')} em formação, ${plural(a.kpis.formacoesAtivas, 'formação', 'formações')} em andamento, ${plural(res?.certificadosEmitidos ?? 0, 'certificado emitido', 'certificados emitidos')} e ${a.kpis.horasOfertadas} h ofertadas.`
     : 'Carregando os números da rede...';
 
   return (
