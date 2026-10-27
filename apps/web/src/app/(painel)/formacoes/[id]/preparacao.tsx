@@ -27,7 +27,7 @@ export function PreparacaoFormacao({ formacaoId, modulos, turmas, etapasTrilha, 
   turmas: { id: string; nome: string; _count: { encontros: number } }[];
   /** Etapas da trilha com recurso (null enquanto a trilha carrega). */
   etapasTrilha: number | null;
-  /** Etapas de modelo que ainda nao receberam recurso (os cursistas nao as veem). */
+  /** Etapas de modelo ou da IA que ainda nao receberam recurso (os cursistas nao as veem). */
   etapasADefinir?: number;
   pode: (p: string) => boolean;
   aoMudar: () => void;
@@ -62,10 +62,10 @@ export function PreparacaoFormacao({ formacaoId, modulos, turmas, etapasTrilha, 
     },
     {
       chave: 'trilha', titulo: 'Trilha formativa', ok: (etapasTrilha ?? 0) > 0 && etapasADefinir === 0,
-      valor: [etapasTrilha ? plural(etapasTrilha, 'etapa', 'etapas') : '', etapasADefinir ? `${plural(etapasADefinir, 'etapa', 'etapas')} do modelo a definir` : '']
+      valor: [etapasTrilha ? plural(etapasTrilha, 'etapa', 'etapas') : '', etapasADefinir ? `${plural(etapasADefinir, 'etapa', 'etapas')} a definir` : '']
         .filter(Boolean).join(' · ') || 'vazia',
-      dica: etapasADefinir ? 'Em cada etapa do modelo, troque o texto de exemplo e escolha o recurso; até lá, os cursistas não a veem.'
-        : etapasTrilha ? undefined : 'Comece por um modelo pronto ou monte etapa por etapa: vídeos, documentos e podcasts em ordem.',
+      dica: etapasADefinir ? 'Nas etapas a definir (de um modelo ou da IA), revise o texto e escolha o recurso; até lá, os cursistas não as veem.'
+        : etapasTrilha ? undefined : 'Comece por um modelo pronto, gere com IA ou monte etapa por etapa: vídeos, documentos e podcasts em ordem.',
       acao: pode('trilha:editar')
         ? (p) => <a className={botao(p)} href="#trilha">{etapasADefinir ? 'Completar a trilha' : etapasTrilha ? 'Ver a trilha' : 'Montar a trilha'}</a>
         : null,

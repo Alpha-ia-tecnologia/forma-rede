@@ -777,6 +777,115 @@ export const aplicarModeloTrilhaSchema = z.object({
 });
 export type AplicarModeloTrilhaDto = z.infer<typeof aplicarModeloTrilhaSchema>;
 
+// ---------------------------------------------------------------------------
+// Trilha gerada com IA: o Gerador de trilhas (agente LangGraph) le a formacao e o
+// acervo aprovado e propoe as etapas; quem edita revisa e salva (RIA-002).
+// ---------------------------------------------------------------------------
+
+export const TEMPOS_TRILHA = ['ate-1h', 'ate-2h', 'ate-4h'] as const;
+export type TempoTrilha = (typeof TEMPOS_TRILHA)[number];
+export const TEMPO_TRILHA_LABELS: Record<TempoTrilha, string> = { 'ate-1h': 'Até 1 hora', 'ate-2h': 'Até 2 horas', 'ate-4h': 'Até 4 horas' };
+export const TEMPO_TRILHA_MIN: Record<TempoTrilha, number> = { 'ate-1h': 60, 'ate-2h': 120, 'ate-4h': 240 };
+
+/** O pedido: o basico que so quem monta a trilha sabe; o resto vem do contexto da formacao. */
+export const gerarTrilhaIaSchema = z.object({
+  objetivo: z.string().trim().min(15, 'Conte em uma ou duas frases o que a trilha deve alcançar.').max(600),
+  quantidade: z.number().int().min(3, 'De 3 a 8 etapas.').max(8, 'De 3 a 8 etapas.').default(5),
+  tempo: z.enum(TEMPOS_TRILHA).default('ate-2h'),
+  formatos: z.array(z.enum(TIPOS_RECURSO_TRILHA)).min(1, 'Escolha ao menos um formato.').default([...TIPOS_RECURSO_TRILHA]),
+  /** Priorizar materiais ja aprovados no acervo da rede. */
+  usarAcervo: z.boolean().default(true),
+});
+export type GerarTrilhaIaDto = z.infer<typeof gerarTrilhaIaSchema>;
+
+/** Saida estruturada do Gerador de trilhas (ferramenta apresentar_trilha), validada antes de usar. */
+export const propostaTrilhaSchema = z.object({
+  resumo: z.string().trim().min(1).max(600),
+  etapas: z.array(z.object({
+    titulo: z.string().trim().min(2).max(160),
+    tipo: z.enum(TIPOS_RECURSO_TRILHA),
+    orientacao: z.string().trim().min(1).max(1000),
+    duracao_min: z.number().int().min(1).max(600),
+    obrigatoria: z.boolean(),
+    /** Id de um material aprovado que a IA recebeu ou encontrou; null = recurso a definir. */
+    material_id: z.string().nullable(),
+    /** O que procurar quando a etapa fica sem material. */
+    recurso_sugerido: z.string().trim().max(300).nullable(),
+  })).min(1).max(10),
+  observacoes: z.string().trim().max(800).nullable(),
+});
+export type PropostaTrilhaGerada = z.infer<typeof propostaTrilhaSchema>;
+
+/** O que a tela recebe: a proposta com os materiais do acervo conferidos no municipio. */
+export interface PropostaTrilhaIa {
+  interacaoId: string;
+  geradoPorIA: true;
+  provider: string;
+  modelo: string;
+  resumo: string;
+  observacoes: string | null;
+  etapas: {
+    titulo: string;
+    tipo: TipoRecursoTrilha;
+    orientacao: string;
+    duracaoMin: number;
+    obrigatoria: boolean;
+    material: { id: string; titulo: string; tipo: MaterialTipo } | null;
+    recursoSugerido: string | null;
+  }[];
+}
+
+export const salvarTrilhaIaSchema = z.object({
+  /** Posicoes das etapas da proposta que entram na trilha, na ordem da proposta. */
+  incluir: z.array(z.number().int().min(0)).min(1, 'Escolha ao menos uma etapa para salvar.'),
+});
+export type SalvarTrilhaIaDto = z.infer<typeof salvarTrilhaIaSchema>;
+
+/** Contexto minimo de uma proposta (o gerador de exemplo usa so isto). */
+export interface ContextoTrilhaExemplo {
+  formacao: { titulo: string; tema: string | null };
+  /** Materiais aprovados disponiveis, os da formacao primeiro. */
+  materiais: { id: string; titulo: string; tipo: MaterialTipo }[];
+}
+
+const ORIENTACAO_EXEMPLO: Record<TipoRecursoTrilha, string> = {
+  VIDEO: 'Assista e anote uma ideia que você gostaria de testar com a turma.',
+  DOCUMENTO: 'Leia e destaque dois trechos que conversam com a sua prática.',
+  PODCAST: 'Ouça no trajeto ou no planejamento e traga uma pergunta para o encontro.',
+  LINK: 'Acesse e registre o que você aplicaria com a sua turma, para compartilhar no encontro.',
+};
+const MOMENTOS_EXEMPLO = ['Para abrir o tema', 'Leitura de base', 'Ver na prática', 'Para aprofundar', 'Planejar com a turma', 'Aplicar e registrar', 'Para refletir', 'Síntese'];
+
+/**
+ * Proposta deterministica, sem modelo (provider "mock" e modo demonstracao): alterna os
+ * formatos pedidos, usa materiais aprovados do mesmo tipo quando pedido e deixa o resto
+ * a definir, com a sugestao do que procurar.
+ */
+export function propostaTrilhaDeExemplo(ctx: ContextoTrilhaExemplo, pedido: GerarTrilhaIaDto): PropostaTrilhaGerada {
+  const tema = ctx.formacao.tema || ctx.formacao.titulo;
+  const porEtapa = Math.max(10, Math.round(TEMPO_TRILHA_MIN[pedido.tempo] / pedido.quantidade / 5) * 5);
+  const usados = new Set<string>();
+  const etapas = Array.from({ length: pedido.quantidade }, (_, i) => {
+    const tipo = pedido.formatos[i % pedido.formatos.length] ?? 'LINK';
+    const material = pedido.usarAcervo ? ctx.materiais.find((m) => m.tipo === tipo && !usados.has(m.id)) : undefined;
+    if (material) usados.add(material.id);
+    return {
+      titulo: `${MOMENTOS_EXEMPLO[i] ?? `Etapa ${i + 1}`}: ${material ? material.titulo : tema}`,
+      tipo,
+      orientacao: ORIENTACAO_EXEMPLO[tipo],
+      duracao_min: porEtapa,
+      obrigatoria: i < pedido.quantidade - 1,
+      material_id: material?.id ?? null,
+      recurso_sugerido: material ? null : `${MATERIAL_TIPO_LABELS[tipo]} curto e de fonte confiável sobre ${tema.toLowerCase()}, ligado ao objetivo da trilha.`,
+    };
+  });
+  return {
+    resumo: `${etapas.length} etapas sobre ${tema.toLowerCase()} para: ${pedido.objetivo}`,
+    etapas,
+    observacoes: 'Proposta de exemplo, sem modelo de IA (provider "mock"). Revise os títulos e escolha os recursos que faltam.',
+  };
+}
+
 export interface EtapaTrilha {
   id: string;
   ordem: number;
@@ -792,6 +901,8 @@ export interface EtapaTrilha {
   } | null;
   /** Etapa de modelo sem recurso: o tipo previsto (video, documento...). */
   tipoPrevisto: MaterialTipo | null;
+  /** Etapa proposta pela IA sem recurso: o que procurar (texto da IA). */
+  recursoSugerido: string | null;
   /** Cursista: se ele ja concluiu. */
   concluida: boolean;
   /** Quem edita: quantos cursistas concluiram. */

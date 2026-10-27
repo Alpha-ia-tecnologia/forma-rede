@@ -360,6 +360,8 @@ obrigatória ou opcional; o cursista estuda na própria página e marca o que co
 | POST | `/formacoes/:id/trilha/etapas` | trilha:editar — `materialId` do acervo (aprovado) **ou** `recurso` novo `{tipo, titulo, url}` |
 | POST | `/formacoes/:id/trilha/modelo` | trilha:editar — `{modeloId}`: as etapas do modelo entram no fim da trilha, sem recurso |
 | PUT | `/trilha/etapas/:etapaId/recurso` | trilha:editar — mesmos campos de criar: dá à etapa do modelo (ou à de material recusado) o recurso e os textos |
+| POST | `/formacoes/:id/trilha/ia` | trilha:editar + ia:usar — `{objetivo, quantidade (3-8), tempo, formatos, usarAcervo}`: proposta do Gerador de trilhas (nada é gravado na trilha) |
+| POST | `/formacoes/:id/trilha/ia/:interacaoId` | trilha:editar — `{incluir: [posições]}`: grava as etapas escolhidas; descartar usa `POST /ia/interacoes/:id/decisao` (`REJEITAR`) |
 | PUT / DELETE | `/trilha/etapas/:etapaId` | trilha:editar |
 | POST | `/trilha/etapas/:etapaId/mover` | trilha:editar — `{direcao: "subir" \| "descer"}` |
 | POST | `/trilha/etapas/:etapaId/conclusao` | participante:area — `{concluida}`, só inscritos numa turma da formação |
@@ -371,6 +373,17 @@ entre colchetes para trocar (`[tema do encontro]`). As etapas entram sem materia
 vazio, `tipo_previsto`) e só quem edita as vê; em cada uma, "Substituir conteúdo" troca título,
 orientação e recurso de uma vez (o título não salva com colchetes), e só então ela chega aos
 cursistas. O checklist "Preparar a formação" só dá a trilha por pronta sem etapas a definir.
+
+**Gerar com IA**: quem edita conta o objetivo, a quantidade de etapas, o tempo de estudo e os
+formatos, e o **Gerador de trilhas** (perfil do agente LangGraph de `@formarede/ai`, Claude Opus 5.5)
+lê a formação (objetivos, público, módulos, plano aprovado, trilha atual) e o acervo aprovado do
+município, pode buscar mais materiais e entrega a proposta pela ferramenta `apresentar_trilha`,
+validada pelo schema do `contracts`. A API confere os materiais citados (só aprovados do próprio
+município; o resto vira etapa a definir, com `recurso_sugerido` do que procurar) e registra a
+interação (`ai_interacao`, assistente `gerador-trilha`, prompt versionado). A tela mostra a proposta
+como rascunho da IA; só as etapas marcadas entram na trilha ao salvar (`APROVADA` ou `EDITADA`), e
+descartar fica registrado (`REJEITADA`). Com o provider `mock` do município, a proposta sai de
+`propostaTrilhaDeExemplo`, sem chamar o modelo (testes e demonstração).
 
 Todo recurso é um `Material`: o recurso novo entra no acervo **em revisão** (tag `trilha`) e
 só aparece para os cursistas depois que a curadoria aprova (`material:aprovar`, que pode
@@ -385,6 +398,11 @@ tocam no player nativo; o resto (PDF, sites) abre em nova aba. Só endereços `h
 aceitos, também no cadastro de materiais.
 
 ## Assistente Pedagógico (IA): LangGraph + Claude Opus 5.5
+
+O grafo LangGraph (`packages/ai/src/agente.ts`) é compartilhado: o laço agente ↔ ferramentas,
+streaming, fallback em recusa e o teto de chamadas valem para todo perfil. O Assistente é um perfil
+(conversa, cartão de planejamento) e o Gerador de trilhas é outro (`packages/ai/src/trilha`), que
+termina ao entregar a proposta.
 
 Tela `/assistente` (menu "Assistente IA") para professores, formadores, coordenação,
 curadoria e gestão da rede — permissão `ia:assistente`. Ajuda a construir planos de

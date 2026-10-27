@@ -1002,6 +1002,8 @@ fieldset.resp-pergunta > legend + * { clear: both; }
 /* Copiloto (plano com IA) e busca nas listas */
 /* Preparacao da formacao: passos com a acao logo abaixo. */
 .prep-acao { margin-top: var(--space-2); }
+/* Em 320 px o texto do botao quebra em vez de passar da tela. */
+.prep-acao .btn { max-width: 100%; white-space: normal; text-align: center; line-height: 1.3; }
 .prep-turma { margin-top: var(--space-3); }
 /* Relatorios: cada formacao com os numeros em texto, contra o minimo dela. */
 .rel-linha { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-4); }
@@ -1354,6 +1356,29 @@ fieldset.resp-pergunta > legend + * { clear: both; }
 .modelo-etapa-texto { display: grid; min-width: 0; font-size: var(--text-sm); }
 .modelo-etapa-texto strong { font-weight: 600; overflow-wrap: anywhere; }
 .modelo-etapa-meta { color: var(--ink-soft); font-size: var(--text-xs); }
+/* Barra de acao dos paineis da trilha (modelo, IA): presa ao fim da tela, como a da chamada */
+.trilha-barra {
+  position: sticky; bottom: 12px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3);
+  padding: 10px 10px 10px 18px; border: 1px solid var(--line); border-radius: var(--radius-2xl); background: var(--paper-raised); box-shadow: var(--shadow-e2);
+}
+.trilha-barra-resumo { display: grid; gap: 2px; min-width: 0; margin: 0; font-size: var(--text-sm); }
+.trilha-barra-resumo strong { font-weight: 600; overflow-wrap: anywhere; }
+.trilha-barra-resumo span { color: var(--ink-soft); font-size: var(--text-xs); }
+.trilha-barra-acoes { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.trilha-barra .campo-erro { flex-basis: 100%; margin: 0; }
+body:has(.trilha-barra) .assistant-fab { display: none; }
+@media (max-width: 1023px) {
+  body:has(.trilha-barra) .mobile-nav { display: none; }
+  body:has(.trilha-barra) .app-content { padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
+  .trilha-barra { bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (max-width: 640px) {
+  /* Os dois botoes cabem lado a lado; o principal ocupa o que sobrar. */
+  .trilha-barra { padding: 10px; gap: 8px; }
+  .trilha-barra-resumo { padding: 0 6px; }
+  .trilha-barra-acoes { width: 100%; }
+  .trilha-barra-acoes .btn-primary { flex: 1 1 auto; }
+}
 /* Trecho de exemplo a trocar: sublinhado tracejado sobre fundo neutro */
 .marcador {
   padding: 0 3px; border-radius: 4px; background: var(--surface-muted); color: var(--ink-soft);
@@ -1362,6 +1387,37 @@ fieldset.resp-pergunta > legend + * { clear: both; }
 /* Etapa de modelo ainda sem recurso: tracejada como rascunho, numero apagado */
 .trilha-etapa[data-estado='modelo'] .trilha-marca { background: var(--paper); box-shadow: none; outline: 1.5px dashed var(--line-strong); outline-offset: -1.5px; color: var(--ink-soft); }
 .trilha-etapa[data-estado='modelo'] .trilha-card { background: color-mix(in srgb, var(--paper-raised) 60%, transparent); outline: 1.5px dashed var(--dash-line); outline-offset: -1.5px; }
+
+/* Gerar com IA: a sugestao do que procurar e a proposta em rascunho (borda tracejada da IA) */
+.trilha-sugestao { display: flex; align-items: flex-start; gap: 6px; margin: 8px 0 0; max-width: 72ch; color: var(--ia-ink); font-size: var(--text-xs); line-height: 1.5; }
+.trilha-sugestao svg { flex: none; margin-top: 2px; }
+.trilha-sugestao strong { font-weight: 600; }
+.trilha-form.trilha-ia-proposta { box-shadow: none; outline: 1.5px dashed var(--ia-line); outline-offset: -1.5px; }
+.trilha-ia-topo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.trilha-ia-resumo { margin: -8px 0 0; max-width: 72ch; font-size: var(--text-sm); line-height: 1.6; }
+.trilha-ia-etapas { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.trilha-ia-etapas li { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: start; gap: 10px; padding: 12px 14px 12px 6px; border: 1px solid var(--line); border-radius: var(--radius-xl); background: var(--paper); }
+.trilha-ia-etapas li[data-incluida='false'] .trilha-tipo, .trilha-ia-etapas li[data-incluida='false'] .trilha-ia-texto { opacity: 0.5; }
+.trilha-ia-incluir { position: relative; display: grid; place-items: center; width: 40px; height: 40px; margin-top: 0; border-radius: var(--radius-xl); cursor: pointer; }
+.trilha-ia-incluir input { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; }
+.trilha-ia-incluir input:checked + .trilha-check-caixa { border-color: var(--green); background: var(--green); color: var(--paper-raised); }
+.trilha-ia-incluir:has(input:focus-visible) { outline: 2px solid var(--brand-strong); outline-offset: 0; }
+.trilha-ia-texto { display: grid; gap: 2px; min-width: 0; }
+.trilha-ia-texto > strong { font-size: var(--text-md); font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.trilha-ia-texto .trilha-meta { margin: 0; }
+.trilha-ia-orientacao { margin: 6px 0 0; max-width: 72ch; font-size: var(--text-sm); line-height: 1.55; }
+.trilha-ia-recurso { display: flex; align-items: flex-start; gap: 6px; margin: 8px 0 0; color: var(--ink-soft); font-size: var(--text-xs); }
+.trilha-ia-recurso svg { flex: none; margin-top: 2px; }
+.trilha-ia-recurso strong { color: var(--ink); font-weight: 600; }
+.trilha-ia-recurso[data-falta='true'] { color: var(--amber); font-weight: 500; }
+.trilha-ia-obs { margin: 0; max-width: 72ch; color: var(--ink-soft); font-size: var(--text-sm); line-height: 1.55; }
+.trilha-ia-obs strong { color: var(--ink); font-weight: 600; }
+.trilha-ia-espera { display: grid; gap: var(--space-2); }
+@media (max-width: 640px) {
+  /* O tipo ja esta escrito na linha de detalhes: sem o icone, o texto ganha a largura. */
+  .trilha-ia-etapas li { grid-template-columns: auto minmax(0, 1fr); gap: 6px; padding: 10px 12px 10px 4px; }
+  .trilha-ia-etapas li > .trilha-tipo { display: none; }
+}
 
 @media (max-width: 640px) {
   .trilha-modulo { grid-template-columns: 32px minmax(0, 1fr); gap: 0 10px; }

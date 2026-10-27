@@ -81,3 +81,6 @@ export async function gerarPlanoFormativo(
 
 // Assistente Pedagogico (LangGraph + Claude Opus 5.5): conversa com professores e formadores.
 export * from './assistente';
+// Agente LangGraph compartilhado e o Gerador de trilhas, outro perfil dele.
+export { MODELO_AGENTE, descreverErroAgente, executarAgente, type PerfilAgente, type ResultadoAgente } from './agente';
+export * from './trilha';

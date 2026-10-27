@@ -4,18 +4,20 @@
 // cursista estuda e marca o que concluiu. Recurso novo so chega aos cursistas
 // depois da curadoria (a API filtra). Um modelo pronto (MODELOS_TRILHA) poe etapas com
 // texto de exemplo e sem recurso; em cada uma, "Substituir conteudo" troca titulo,
-// orientacao e recurso de uma vez, e so entao a etapa chega aos cursistas.
+// orientacao e recurso de uma vez, e so entao a etapa chega aos cursistas. "Gerar com IA"
+// pede o objetivo e o formato e o Gerador de trilhas (agente LangGraph na API) propoe as
+// etapas a partir da formacao e do acervo; nada entra na trilha antes de salvar.
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import {
   ArrowDown, ArrowUp, AudioLines, Check, Clapperboard, ExternalLink, FileText, Hourglass, Image, LayoutTemplate,
-  Library, Link2, Pencil, Plus, Podcast, Presentation, Replace, Route, Sheet, ShieldCheck, Trash2, X,
+  Library, Link2, Pencil, Plus, Podcast, Presentation, Replace, Route, Sheet, ShieldCheck, Sparkles, Trash2, X,
 } from 'lucide-react';
-import { MATERIAL_TIPO_LABELS, MODELOS_TRILHA, TIPOS_RECURSO_TRILHA } from '@formarede/contracts';
-import type { EtapaTrilha, MaterialTipo, TrilhaFormacao } from '@formarede/contracts';
+import { MATERIAL_TIPO_LABELS, MODELOS_TRILHA, TEMPOS_TRILHA, TEMPO_TRILHA_LABELS, TIPOS_RECURSO_TRILHA } from '@formarede/contracts';
+import type { EtapaTrilha, MaterialTipo, PropostaTrilhaIa, TempoTrilha, TrilhaFormacao } from '@formarede/contracts';
 import { api, getUser } from '../../../../lib/api';
 import { descreverMidia, reconhecerMidia, type Midia } from '../../../../lib/midia';
 import { plural } from '../../../../lib/texto';
-import { EmptyState, ListSkeleton, Note, StatusBadge } from '../../ui';
+import { EmptyState, ListSkeleton, Note, SeloIA, StatusBadge } from '../../ui';
 
 type TipoRecurso = (typeof TIPOS_RECURSO_TRILHA)[number];
 interface Modulo { id: string; titulo: string; ordem: number }
@@ -66,6 +68,9 @@ export function TrilhaFormativa({ formacaoId, modulos, aoMudarColecao, aoCarrega
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [adicionando, setAdicionando] = useState(false);
   const [escolhendoModelo, setEscolhendoModelo] = useState(false);
+  const [gerandoIa, setGerandoIa] = useState(false);
+  // Modelo ou proposta da IA recem-salvos: a confirmacao diz que as etapas ja estao na trilha e o que falta.
+  const [aplicado, setAplicado] = useState<{ origem: 'modelo' | 'ia'; nome: string; etapas: number; comMaterial: number } | null>(null);
   const [editando, setEditando] = useState<string | null>(null);
   // Etapa recebendo recurso e textos: a de modelo, ou a que teve o material recusado.
   const [substituindo, setSubstituindo] = useState<string | null>(null);
@@ -79,6 +84,7 @@ export function TrilhaFormativa({ formacaoId, modulos, aoMudarColecao, aoCarrega
   const tituloRef = useRef<HTMLHeadingElement>(null);
   const user = getUser();
   const podeAprovar = !!user && (user.permissions.includes('*') || user.permissions.includes('material:aprovar'));
+  const usaIa = !!user && (user.permissions.includes('*') || user.permissions.includes('ia:usar'));
 
   useEffect(() => {
     api.get<TrilhaFormacao>(`/formacoes/${formacaoId}/trilha`)
@@ -99,7 +105,7 @@ export function TrilhaFormativa({ formacaoId, modulos, aoMudarColecao, aoCarrega
     foco.current = null;
     const el = alvo === 'titulo' ? tituloRef.current : document.querySelector<HTMLElement>(alvo);
     el?.focus();
-  }, [trilha, editando, adicionando, removendo, abertas, revendo, substituindo, escolhendoModelo]);
+  }, [trilha, editando, adicionando, removendo, abertas, revendo, substituindo, escolhendoModelo, gerandoIa]);
 
   const executar = useCallback(async (chave: string, fn: () => Promise<TrilhaFormacao>, colecao = false) => {
     setOcupado(chave);
@@ -175,8 +181,10 @@ export function TrilhaFormativa({ formacaoId, modulos, aoMudarColecao, aoCarrega
 
   /** Abre um so formulario por vez na trilha. */
   function fecharFormularios() {
+    setAplicado(null);
     setAdicionando(false);
     setEscolhendoModelo(false);
+    setGerandoIa(false);
     setEditando(null);
     setSubstituindo(null);
     setRemovendo(null);
@@ -193,9 +201,35 @@ export function TrilhaFormativa({ formacaoId, modulos, aoMudarColecao, aoCarrega
       foco.current = primeira ? `[data-etapa="${primeira.id}"] [data-acao="substituir"]` : 'titulo';
       setTrilha(nova);
       setEscolhendoModelo(false);
+      const modelo = MODELOS_TRILHA.find((m) => m.id === modeloId);
+      setAplicado({ origem: 'modelo', nome: modelo?.nome ?? 'escolhido', etapas: nova.etapas.length - antes.size, comMaterial: 0 });
       return null;
     } catch (err) {
       return msg(err, 'Não foi possível usar o modelo.');
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  /** Grava as etapas escolhidas da proposta da IA (a decisao humana). */
+  async function salvarProposta(proposta: PropostaTrilhaIa, incluir: number[]): Promise<string | null> {
+    const antes = new Set(etapas.map((e) => e.id));
+    setOcupado('ia');
+    setErro(null);
+    try {
+      const nova = await api.post<TrilhaFormacao>(`/formacoes/${formacaoId}/trilha/ia/${proposta.interacaoId}`, { incluir });
+      const novas = nova.etapas.filter((e) => !antes.has(e.id));
+      const semRecurso = novas.find((e) => !e.material);
+      // O proximo passo: escolher o recurso da primeira etapa que ficou sem.
+      foco.current = semRecurso ? `[data-etapa="${semRecurso.id}"] [data-acao="substituir"]` : novas[0] ? `#titulo-${novas[0].id}` : 'titulo';
+      setTrilha(nova);
+      setGerandoIa(false);
+      const comMaterial = novas.filter((e) => e.material).length;
+      setAplicado({ origem: 'ia', nome: '', etapas: novas.length, comMaterial });
+      if (comMaterial) aoMudarColecao();
+      return null;
+    } catch (err) {
+      return msg(err, 'Não foi possível salvar a trilha.');
     } finally {
       setOcupado(null);
     }
@@ -274,8 +308,13 @@ export function TrilhaFormativa({ formacaoId, modulos, aoMudarColecao, aoCarrega
               : 'Siga as etapas em ordem entre os encontros. Cada uma traz uma orientação da equipe de formação.'}
           </p>
         </div>
-        {podeEditar && !adicionando && !escolhendoModelo && etapas.length > 0 && (
+        {podeEditar && !adicionando && !escolhendoModelo && !gerandoIa && etapas.length > 0 && (
           <div className="trilha-head-acoes">
+            {usaIa && (
+              <button type="button" className="btn btn-ghost" onClick={() => { fecharFormularios(); setGerandoIa(true); }}>
+                <Sparkles size={18} aria-hidden="true" /> Gerar com IA
+              </button>
+            )}
             <button type="button" className="btn btn-ghost" onClick={() => { fecharFormularios(); setEscolhendoModelo(true); }}>
               <LayoutTemplate size={18} aria-hidden="true" /> Usar um modelo
             </button>
@@ -324,18 +363,37 @@ export function TrilhaFormativa({ formacaoId, modulos, aoMudarColecao, aoCarrega
           <span>{etapas.length} {etapas.length === 1 ? 'etapa' : 'etapas'}</span>
           {minutos > 0 && <span>cerca de {fmtDuracao(minutos)} de estudo</span>}
           {aguardando > 0 && <span className="trilha-resumo-alerta">{aguardando} aguardando curadoria</span>}
-          {aDefinir.length > 0 && <span className="trilha-resumo-alerta">{plural(aDefinir.length, 'etapa do modelo', 'etapas do modelo')} a definir</span>}
+          {aDefinir.length > 0 && <span className="trilha-resumo-alerta">{plural(aDefinir.length, 'etapa', 'etapas')} a definir</span>}
         </p>
       )}
 
-      {podeEditar && aDefinir.length > 0 && !escolhendoModelo && (
+      {aplicado?.origem === 'modelo' ? (
+        <Note tom="ok">
+          Pronto: {aplicado.etapas === 1 ? 'a etapa' : `as ${aplicado.etapas} etapas`} do modelo “{aplicado.nome}”
+          já {aplicado.etapas === 1 ? 'está salva' : 'estão salvas'} na trilha desta formação. Agora, em cada uma, use
+          “Substituir conteúdo” para pôr o título e o recurso; os cursistas só veem a etapa depois disso.
+        </Note>
+      ) : aplicado?.origem === 'ia' ? (
+        <Note tom="ok">
+          Pronto: {aplicado.etapas === 1 ? 'a etapa proposta pela IA já está salva' : `as ${aplicado.etapas} etapas propostas pela IA já estão salvas`} na
+          trilha desta formação.{' '}
+          {aplicado.comMaterial === aplicado.etapas
+            ? 'Todas usam materiais aprovados do acervo e já aparecem para os cursistas.'
+            : `${aplicado.comMaterial ? `${plural(aplicado.comMaterial, 'usa', 'usam')} material do acervo e já aparece${aplicado.comMaterial === 1 ? '' : 'm'} para os cursistas. ` : ''}Nas que ficaram sem recurso, use “Substituir conteúdo”: a sugestão da IA do que procurar está em cada uma.`}
+        </Note>
+      ) : podeEditar && aDefinir.length > 0 && !escolhendoModelo && !gerandoIa && (
         <Note tom="info">
-          As etapas do modelo têm texto de exemplo. Em cada uma, use “Substituir conteúdo” para pôr o título, a
-          orientação e o recurso da sua formação; os cursistas só veem a etapa depois disso.
+          As etapas a definir já estão salvas na trilha, ainda sem recurso. Em cada uma, use “Substituir conteúdo”
+          para pôr o título, a orientação e o recurso da sua formação; os cursistas só veem a etapa depois disso.
         </Note>
       )}
 
       {erro && <Note tom="danger">{erro}</Note>}
+
+      {gerandoIa && (
+        <GerarTrilhaIa formacaoId={formacaoId} jaTem={etapas.length} ocupado={ocupado === 'ia'} aoSalvar={salvarProposta}
+          aoCancelar={() => { foco.current = 'titulo'; setGerandoIa(false); setErro(null); }} />
+      )}
 
       {escolhendoModelo && (
         <EscolherModelo jaTem={etapas.length} ocupado={ocupado === 'modelo'} aoAplicar={aplicarModelo}
@@ -368,16 +426,23 @@ export function TrilhaFormativa({ formacaoId, modulos, aoMudarColecao, aoCarrega
         />
       )}
 
-      {etapas.length === 0 && !adicionando && !escolhendoModelo && (
+      {etapas.length === 0 && !adicionando && !escolhendoModelo && !gerandoIa && (
         podeEditar ? (
           <EmptyState icon={<Route size={26} />} titulo="A trilha ainda está vazia"
-            descricao="Comece por um modelo pronto e troque os textos de exemplo pelo seu conteúdo, ou monte etapa por etapa: vídeos, documentos e podcasts em ordem, cada um com uma orientação para os cursistas."
+            descricao={usaIa
+              ? 'Comece por um modelo pronto, peça uma proposta à IA a partir desta formação ou monte etapa por etapa: vídeos, documentos e podcasts em ordem, cada um com uma orientação para os cursistas.'
+              : 'Comece por um modelo pronto e troque os textos de exemplo pelo seu conteúdo, ou monte etapa por etapa: vídeos, documentos e podcasts em ordem, cada um com uma orientação para os cursistas.'}
             acao={(
               <div className="trilha-vazia-acoes">
                 <button type="button" className="btn btn-primary" onClick={() => setEscolhendoModelo(true)}>
                   <LayoutTemplate size={18} aria-hidden="true" /> Começar de um modelo
                 </button>
-                <button type="button" className="btn btn-secondary" onClick={() => setAdicionando(true)}>
+                {usaIa && (
+                  <button type="button" className="btn btn-secondary" onClick={() => setGerandoIa(true)}>
+                    <Sparkles size={18} aria-hidden="true" /> Gerar com IA
+                  </button>
+                )}
+                <button type="button" className={usaIa ? 'btn btn-ghost' : 'btn btn-secondary'} onClick={() => setAdicionando(true)}>
                   <Plus size={18} aria-hidden="true" /> Montar etapa por etapa
                 </button>
               </div>
@@ -441,9 +506,10 @@ export function TrilhaFormativa({ formacaoId, modulos, aoMudarColecao, aoCarrega
                             <span>{e.obrigatoria ? 'Obrigatória' : 'Opcional'}</span>
                           </p>
                         </div>
-                        <div className="trilha-selos"><StatusBadge>Do modelo</StatusBadge></div>
+                        <div className="trilha-selos">{e.recursoSugerido ? <SeloIA>Proposta da IA</SeloIA> : <StatusBadge>Do modelo</StatusBadge>}</div>
                       </div>
                       {e.orientacao && <p className="trilha-orientacao"><Marcadores texto={e.orientacao} /></p>}
+                      {e.recursoSugerido && <SugestaoIa texto={e.recursoSugerido} />}
                       <div className="trilha-acoes">
                         <button type="button" data-acao="substituir" className={e.id === primeiraADefinir ? 'btn btn-primary' : 'btn btn-secondary'}
                           aria-describedby={`titulo-${e.id}`} disabled={!!ocupado} onClick={() => { fecharFormularios(); setSubstituindo(e.id); }}>
@@ -663,6 +729,240 @@ const comuns = (v: { orientacao: string; duracao: string; moduloId: string; obri
   obrigatoria: v.obrigatoria,
 });
 
+/** O que a IA sugere procurar para a etapa sem recurso (texto da IA, na cor da IA). */
+function SugestaoIa({ texto }: { texto: string }) {
+  return (
+    <p className="trilha-sugestao">
+      <Sparkles size={14} aria-hidden="true" />
+      <span><strong>Sugestão da IA:</strong> {texto}</span>
+    </p>
+  );
+}
+
+/**
+ * Gerar com IA: o pedido (objetivo, etapas, tempo, formatos), a espera e a proposta em
+ * rascunho, com cada etapa marcada para entrar ou nao. Descartar registra a decisao.
+ */
+function GerarTrilhaIa({ formacaoId, jaTem, ocupado, aoCancelar, aoSalvar }: {
+  formacaoId: string;
+  /** Etapas que a trilha ja tem: as da proposta entram depois delas. */
+  jaTem: number;
+  ocupado: boolean;
+  aoCancelar: () => void;
+  aoSalvar: (proposta: PropostaTrilhaIa, incluir: number[]) => Promise<string | null>;
+}) {
+  const id = useId();
+  const [pedido, setPedido] = useState<{ objetivo: string; quantidade: number; tempo: TempoTrilha; formatos: TipoRecurso[]; usarAcervo: boolean }>({
+    objetivo: '', quantidade: 5, tempo: 'ate-2h', formatos: [...TIPOS_RECURSO_TRILHA], usarAcervo: true,
+  });
+  const [fase, setFase] = useState<'pedido' | 'gerando' | 'proposta'>('pedido');
+  const [proposta, setProposta] = useState<PropostaTrilhaIa | null>(null);
+  const [incluir, setIncluir] = useState<Set<number>>(new Set());
+  const [erroObjetivo, setErroObjetivo] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const controle = useRef<AbortController | null>(null);
+  const campo = useRef<HTMLTextAreaElement>(null);
+  const titulo = useRef<HTMLHeadingElement>(null);
+
+  // Cada fase poe o foco no seu comeco: o objetivo, o aviso de espera ou o titulo da proposta.
+  useEffect(() => { (fase === 'pedido' ? campo.current : titulo.current)?.focus(); }, [fase]);
+  // Fechar o painel no meio da geracao cancela a espera.
+  useEffect(() => () => controle.current?.abort(), []);
+
+  async function gerar(ev: FormEvent) {
+    ev.preventDefault();
+    const objetivo = pedido.objetivo.trim();
+    if (objetivo.length < 15) {
+      setErroObjetivo('Conte em uma ou duas frases o que a trilha deve alcançar.');
+      campo.current?.focus();
+      return;
+    }
+    if (!pedido.formatos.length) {
+      setErro('Escolha ao menos um formato.');
+      return;
+    }
+    setErro(null);
+    setFase('gerando');
+    const c = new AbortController();
+    controle.current = c;
+    try {
+      const p = await api.post<PropostaTrilhaIa>(`/formacoes/${formacaoId}/trilha/ia`, { ...pedido, objetivo }, { signal: c.signal });
+      setProposta(p);
+      setIncluir(new Set(p.etapas.map((_, i) => i)));
+      setFase('proposta');
+    } catch (e) {
+      if (c.signal.aborted) return;
+      setErro(msg(e, 'Não foi possível gerar a proposta.'));
+      setFase('pedido');
+    }
+  }
+
+  /** Descartar a proposta fica registrado (decisao humana); o pedido continua para ajustar. */
+  function descartar(sair: boolean) {
+    if (proposta) void api.post(`/ia/interacoes/${proposta.interacaoId}/decisao`, { decisao: 'REJEITAR' }).catch(() => undefined);
+    setProposta(null);
+    setErro(null);
+    if (sair) aoCancelar(); else setFase('pedido');
+  }
+
+  const alternar = <T,>(lista: T[], v: T) => (lista.includes(v) ? lista.filter((x) => x !== v) : [...lista, v]);
+
+  if (fase === 'gerando') {
+    return (
+      <div className="trilha-form trilha-ia-gerando">
+        <div role="status">
+          <h3 ref={titulo} tabIndex={-1} className="trilha-form-titulo">Gerando a proposta...</h3>
+          <p className="trilha-form-lead">
+            A IA está lendo a formação e o acervo da rede e montando as etapas. Costuma levar menos de um minuto.
+          </p>
+        </div>
+        <div className="trilha-ia-espera" aria-hidden="true">
+          {[0, 1, 2].map((i) => <div key={i} className="skeleton" style={{ height: 64, borderRadius: 'var(--radius-xl)' }} />)}
+        </div>
+        <div className="trilha-form-acoes">
+          <button type="button" className="btn btn-ghost" onClick={() => { controle.current?.abort(); setFase('pedido'); }}>Cancelar</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (fase === 'proposta' && proposta) {
+    const escolhidas = proposta.etapas.filter((_, i) => incluir.has(i));
+    const comMaterial = escolhidas.filter((e) => e.material).length;
+    return (
+      <section className="trilha-form trilha-ia-proposta" aria-labelledby={`${id}-proposta`}>
+        <div className="trilha-ia-topo">
+          <h3 id={`${id}-proposta`} ref={titulo} tabIndex={-1} className="trilha-form-titulo">Proposta de trilha</h3>
+          <SeloIA>Proposto pela IA · revise</SeloIA>
+        </div>
+        <p className="trilha-ia-resumo">{proposta.resumo}</p>
+        <ol className="trilha-ia-etapas">
+          {proposta.etapas.map((e, i) => {
+            const tipo = e.material?.tipo ?? e.tipo;
+            const I = ICONE[tipo] ?? FileText;
+            const dentro = incluir.has(i);
+            return (
+              <li key={i} data-incluida={dentro}>
+                <label className="trilha-ia-incluir">
+                  <input type="checkbox" checked={dentro} onChange={() => setIncluir((s) => {
+                    const n = new Set(s);
+                    if (n.has(i)) n.delete(i); else n.add(i);
+                    return n;
+                  })} />
+                  <span className="trilha-check-caixa" aria-hidden="true"><Check size={14} strokeWidth={3} /></span>
+                  <span className="sr-only">Incluir a etapa {i + 1}: {e.titulo}</span>
+                </label>
+                <span className="trilha-tipo" data-tipo={tipo}><I size={18} aria-hidden="true" /></span>
+                <div className="trilha-ia-texto">
+                  <strong>{e.titulo}</strong>
+                  <p className="trilha-meta">
+                    <span>{MATERIAL_TIPO_LABELS[tipo] ?? tipo}</span>
+                    <span>{fmtDuracao(e.duracaoMin)}</span>
+                    <span>{e.obrigatoria ? 'Obrigatória' : 'Opcional'}</span>
+                  </p>
+                  <p className="trilha-ia-orientacao">{e.orientacao}</p>
+                  {e.material ? (
+                    <p className="trilha-ia-recurso"><Library size={14} aria-hidden="true" /> <span>Do acervo: <strong>{e.material.titulo}</strong></span></p>
+                  ) : (
+                    <>
+                      <p className="trilha-ia-recurso" data-falta="true"><Hourglass size={14} aria-hidden="true" /> <span>Recurso a definir depois de salvar</span></p>
+                      {e.recursoSugerido && <SugestaoIa texto={e.recursoSugerido} />}
+                    </>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+        {proposta.observacoes && <p className="trilha-ia-obs"><strong>Para conferir:</strong> {proposta.observacoes}</p>}
+        <div className="trilha-barra">
+          <p className="trilha-barra-resumo">
+            <strong>{escolhidas.length ? `${plural(escolhidas.length, 'etapa', 'etapas')} de ${proposta.etapas.length} para salvar` : 'Nenhuma etapa marcada'}</strong>
+            <span>{comMaterial ? `${comMaterial} com material do acervo · ` : ''}{jaTem ? 'entram no fim da trilha' : 'entram na trilha desta formação'}</span>
+          </p>
+          <div className="trilha-barra-acoes">
+            <button type="button" className="btn btn-primary" disabled={ocupado || !escolhidas.length}
+              onClick={async () => setErro(await aoSalvar(proposta, [...incluir].sort((a, b) => a - b)))}>
+              {ocupado ? 'Salvando...' : 'Salvar na trilha'}
+            </button>
+            <button type="button" className="btn btn-secondary" disabled={ocupado} onClick={() => descartar(false)}>Ajustar o pedido</button>
+            <button type="button" className="btn btn-ghost" disabled={ocupado} onClick={() => descartar(true)}>Descartar</button>
+          </div>
+          {erro && <p className="campo-erro" role="alert">{erro}</p>}
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <form className="trilha-form" onSubmit={gerar} noValidate aria-labelledby={`${id}-titulo`}>
+      <div>
+        <h3 id={`${id}-titulo`} className="trilha-form-titulo">Gerar a trilha com IA</h3>
+        <p className="trilha-form-lead">
+          Conte o objetivo e escolha o formato. A IA lê o que esta formação já tem (objetivos, público, módulos, plano
+          aprovado e trilha atual) e os materiais aprovados do acervo da rede, e propõe as etapas. Você revisa antes de salvar.
+        </p>
+      </div>
+      <div>
+        <label className="label" htmlFor={`${id}-obj`}>Objetivo da trilha</label>
+        <span className="hint" id={`${id}-obj-dica`}>Para quê e para quando: o que os cursistas devem conseguir fazer ao final.</span>
+        <textarea ref={campo} id={`${id}-obj`} className="input" maxLength={600} value={pedido.objetivo}
+          aria-invalid={!!erroObjetivo || undefined} aria-describedby={`${id}-obj-dica${erroObjetivo ? ` ${id}-obj-erro` : ''}`}
+          onChange={(e) => { setPedido({ ...pedido, objetivo: e.target.value }); setErroObjetivo(null); }}
+          placeholder="Ex.: preparar para o encontro 2, sobre leitura compartilhada, com uma estratégia para aplicar com a turma." />
+        {erroObjetivo && <p id={`${id}-obj-erro`} className="campo-erro">{erroObjetivo}</p>}
+      </div>
+      <fieldset className="trilha-tipos">
+        <legend className="label">Quantas etapas</legend>
+        <div className="seg">
+          {[3, 4, 5, 6, 7, 8].map((n) => (
+            <button key={n} type="button" aria-pressed={pedido.quantidade === n} onClick={() => setPedido({ ...pedido, quantidade: n })}>{n}</button>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset className="trilha-tipos">
+        <legend className="label">Tempo de estudo</legend>
+        <div className="seg">
+          {TEMPOS_TRILHA.map((t) => (
+            <button key={t} type="button" aria-pressed={pedido.tempo === t} onClick={() => setPedido({ ...pedido, tempo: t })}>{TEMPO_TRILHA_LABELS[t]}</button>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset className="trilha-tipos">
+        <legend className="label">Formatos</legend>
+        <span className="hint">Marque um ou mais.</span>
+        <div className="seg">
+          {TIPOS_RECURSO_TRILHA.map((t) => {
+            const I = ICONE[t];
+            return (
+              <button key={t} type="button" aria-pressed={pedido.formatos.includes(t)}
+                onClick={() => { setPedido({ ...pedido, formatos: alternar(pedido.formatos, t) }); setErro(null); }}>
+                <I size={16} aria-hidden="true" /> {MATERIAL_TIPO_LABELS[t]}
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+      <label className="trilha-check trilha-check-form" data-marcado={pedido.usarAcervo}>
+        <input type="checkbox" checked={pedido.usarAcervo} onChange={(e) => setPedido({ ...pedido, usarAcervo: e.target.checked })} />
+        <span className="trilha-check-caixa" aria-hidden="true"><Check size={14} strokeWidth={3} /></span>
+        Usar os materiais aprovados do acervo da rede quando servirem
+      </label>
+      <div className="trilha-barra">
+        <p className="trilha-barra-resumo">
+          <strong>{pedido.quantidade} etapas · {TEMPO_TRILHA_LABELS[pedido.tempo].toLowerCase()}</strong>
+          <span>{pedido.formatos.length ? pedido.formatos.map((t) => MATERIAL_TIPO_LABELS[t]).join(', ') : 'nenhum formato marcado'}</span>
+        </p>
+        <div className="trilha-barra-acoes">
+          <button type="submit" className="btn btn-primary"><Sparkles size={18} aria-hidden="true" /> Gerar proposta</button>
+          <button type="button" className="btn btn-ghost" onClick={aoCancelar}>Cancelar</button>
+        </div>
+        {erro && <p className="campo-erro" role="alert">{erro}</p>}
+      </div>
+    </form>
+  );
+}
+
 /** Modelos prontos: escolher um em linhas, ver as etapas dele e usar. */
 function EscolherModelo({ jaTem, ocupado, aoCancelar, aoAplicar }: {
   /** Etapas que a trilha ja tem: as do modelo entram depois delas. */
@@ -685,8 +985,9 @@ function EscolherModelo({ jaTem, ocupado, aoCancelar, aoAplicar }: {
       <div>
         <h3 id={`${id}-titulo`} className="trilha-form-titulo">Começar de um modelo</h3>
         <p className="trilha-form-lead">
-          Escolha um percurso pronto. As etapas entram com texto de exemplo: em cada uma você troca o que está
-          entre colchetes e escolhe o recurso. Os cursistas só veem a etapa depois disso.
+          Escolha um percurso pronto e clique em “Usar este modelo”: as etapas são salvas na trilha desta formação
+          com texto de exemplo. Depois, em cada uma, você troca o que está entre colchetes e escolhe o recurso; os
+          cursistas só veem a etapa depois disso.
         </p>
       </div>
       <fieldset className="modelos">
@@ -722,15 +1023,21 @@ function EscolherModelo({ jaTem, ocupado, aoCancelar, aoAplicar }: {
           </ol>
         </div>
       )}
-      {jaTem > 0 && modelo && (
-        <Note tom="info">
-          As {plural(modelo.etapas.length, 'etapa', 'etapas')} do modelo entram no fim da trilha, depois {jaTem === 1 ? 'da que já está' : `das ${jaTem} que já estão`} nela.
-        </Note>
-      )}
-      {erro && <Note tom="danger">{erro}</Note>}
-      <div className="trilha-form-acoes">
-        <button type="submit" className="btn btn-primary" disabled={ocupado || !modelo}>{ocupado ? 'Aplicando...' : 'Usar este modelo'}</button>
-        <button type="button" className="btn btn-ghost" onClick={aoCancelar}>Cancelar</button>
+      {/* Presa ao fim da tela: a acao fica a vista enquanto se le a lista e a previa. */}
+      <div className="trilha-barra">
+        {modelo && (
+          <p className="trilha-barra-resumo">
+            <strong>{modelo.nome}</strong>
+            <span>
+              {plural(modelo.etapas.length, 'etapa entra', 'etapas entram')} {jaTem ? `no fim da trilha, depois ${jaTem === 1 ? 'da que já está' : `das ${jaTem} que já estão`} nela` : 'na trilha desta formação'}
+            </span>
+          </p>
+        )}
+        <div className="trilha-barra-acoes">
+          <button type="submit" className="btn btn-primary" disabled={ocupado || !modelo}>{ocupado ? 'Salvando...' : 'Usar este modelo'}</button>
+          <button type="button" className="btn btn-ghost" onClick={aoCancelar}>Cancelar</button>
+        </div>
+        {erro && <p className="campo-erro" role="alert">{erro}</p>}
       </div>
     </form>
   );
@@ -744,6 +1051,7 @@ function FormEtapa({ formacaoId, modulos, podeAprovar, ocupado, noAcervo, etapa,
 }) {
   const id = useId();
   const doModelo = !!etapa && !etapa.material;
+  const temMarcador = !!etapa && MARCADOR.test(etapa.titulo);
   const previsto = etapa ? tipoDa(etapa) : 'VIDEO';
   const [origem, setOrigem] = useState<'novo' | 'acervo'>('novo');
   const [tipo, setTipo] = useState<TipoRecurso>((TIPOS_RECURSO_TRILHA as readonly string[]).includes(previsto) ? previsto as TipoRecurso : 'VIDEO');
@@ -813,16 +1121,18 @@ function FormEtapa({ formacaoId, modulos, podeAprovar, ocupado, noAcervo, etapa,
           <div>
             <h3 id={`${id}-titulo`} className="trilha-form-titulo">{doModelo ? 'Substituir o conteúdo da etapa' : 'Trocar o recurso da etapa'}</h3>
             <p className="trilha-form-lead">
-              {doModelo
-                ? 'Troque o texto de exemplo pelo da sua formação e escolha o recurso que os cursistas vão estudar.'
-                : 'Escolha outro recurso para esta etapa; a orientação e o tempo continuam, se você não mudar.'}
+              {etapa.recursoSugerido
+                ? 'Revise o título e a orientação que a IA propôs e escolha o recurso que os cursistas vão estudar.'
+                : doModelo
+                  ? 'Troque o texto de exemplo pelo da sua formação e escolha o recurso que os cursistas vão estudar.'
+                  : 'Escolha outro recurso para esta etapa; a orientação e o tempo continuam, se você não mudar.'}
             </p>
           </div>
           <div>
             <label className="label" htmlFor={`${id}-etapa`}>Título da etapa</label>
-            {doModelo && <span className="hint" id={`${id}-etapa-dica`}>Troque o trecho entre colchetes.</span>}
+            {temMarcador && <span className="hint" id={`${id}-etapa-dica`}>Troque o trecho entre colchetes.</span>}
             <input ref={campoTitulo} id={`${id}-etapa`} className="input" maxLength={160} value={titulo}
-              aria-invalid={!!erroTitulo || undefined} aria-describedby={[doModelo ? `${id}-etapa-dica` : '', erroTitulo ? `${id}-etapa-erro` : ''].filter(Boolean).join(' ') || undefined}
+              aria-invalid={!!erroTitulo || undefined} aria-describedby={[temMarcador ? `${id}-etapa-dica` : '', erroTitulo ? `${id}-etapa-erro` : ''].filter(Boolean).join(' ') || undefined}
               onChange={(e) => { setTitulo(e.target.value); setErroTitulo(null); }} />
             {erroTitulo && <p id={`${id}-etapa-erro`} className="campo-erro">{erroTitulo}</p>}
           </div>
@@ -830,6 +1140,7 @@ function FormEtapa({ formacaoId, modulos, podeAprovar, ocupado, noAcervo, etapa,
             <span className="label" style={{ margin: 0 }}>Recurso</span>
             {origens}
           </div>
+          {etapa.recursoSugerido && <SugestaoIa texto={etapa.recursoSugerido} />}
         </>
       ) : (
         <div className="trilha-form-topo">

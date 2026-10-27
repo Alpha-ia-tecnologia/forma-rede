@@ -87,7 +87,14 @@ Caixa de frase em títulos, botões e selos.
   no `contracts`); plurais e decimais por `lib/texto.ts` (`plural`, `decimal`), datas por `lib/datas.ts`.
 - `.empty-state` com borda tracejada; `.hatch` (textura a 120°) em barras, roscas e medidores.
 - Modelo pronto (trilha): escolhido em linhas de opção (`.modelo-opcao`, a escolhida em `brand-faint` com borda
-  amarela) com a prévia das etapas logo abaixo. O texto de exemplo marca o que trocar com `.marcador` (trecho entre
+  amarela) com a prévia das etapas logo abaixo; "Usar este modelo" fica numa barra presa ao fim da tela
+  (`.modelo-barra`, como a da chamada: some a barra de baixo do celular e o botão do Assistente), com o modelo e
+  quantas etapas entram. Depois de usar, a confirmação diz que as etapas já estão salvas na trilha e o que falta.
+- Gerar trilha com IA: o pedido (objetivo, etapas, tempo, formatos, usar o acervo) com a mesma barra presa; a espera
+  diz o que a IA está fazendo e pode ser cancelada; a proposta é rascunho da IA (borda tracejada `ia-line`, `SeloIA`
+  "Proposto pela IA · revise"), cada etapa com caixa para incluir ou não, o material do acervo ou "Recurso a definir"
+  com a sugestão da IA em `ia-ink` (`.trilha-sugestao`). Salvar grava só as marcadas; a etapa da IA sem recurso leva
+  o selo "Proposta da IA" e a sugestão no cartão e no formulário de substituir. O texto de exemplo marca o que trocar com `.marcador` (trecho entre
   colchetes, fundo neutro e sublinhado tracejado). A etapa ainda por preencher é tracejada como o rascunho, com o
   número apagado e o selo "Do modelo"; "Substituir conteúdo" abre o formulário no lugar do cartão, já preenchido,
   e só a primeira etapa por preencher tem o botão principal.

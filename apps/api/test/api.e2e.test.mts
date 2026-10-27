@@ -341,6 +341,39 @@ test('trilha: modelo pronto entra sem recurso e so chega ao professor depois de 
   assert.equal(agora.etapas.length, antes + 1, 'a etapa substituida chega ao professor');
 });
 
+test('trilha com IA: proposta com materiais do municipio, salva so o que foi marcado', async () => {
+  const rota = `/formacoes/${s.formacaoId}/trilha/ia`;
+  const pedido = { objetivo: 'Preparar para o encontro 2 sobre leitura compartilhada.', quantidade: 4, tempo: 'ate-2h', formatos: ['DOCUMENTO', 'VIDEO'], usarAcervo: true };
+  status(await api('POST', rota, { token: s.token.formador, body: { ...pedido, objetivo: 'curto' } }), 400, 'objetivo curto');
+  status(await api('POST', rota, { token: s.token.prof1, body: pedido }), 403, 'professor gera trilha');
+
+  const p = ok(await api('POST', rota, { token: s.token.formador, body: pedido }), 'gerar proposta');
+  assert.equal(p.geradoPorIA, true);
+  assert.equal(p.etapas.length, 4);
+  assert.ok(p.etapas.every((e: { material: { id: string } | null }) => !e.material || e.material.id === s.materialId), 'so material aprovado do municipio');
+  assert.ok(p.etapas.some((e: { material: unknown }) => e.material), 'o material aprovado da formacao entra');
+
+  const antes = ok(await api('GET', `/formacoes/${s.formacaoId}/trilha`, { token: s.token.formador }), 'trilha').etapas.length;
+  status(await api('POST', `${rota}/${p.interacaoId}`, { token: s.token.formador, body: { incluir: [] } }), 400, 'salvar sem etapas');
+  const t = ok(await api('POST', `${rota}/${p.interacaoId}`, { token: s.token.formador, body: { incluir: [0, 2] } }), 'salvar duas etapas');
+  const novas = t.etapas.slice(antes);
+  assert.deepEqual(novas.map((e: { titulo: string }) => e.titulo), [p.etapas[0].titulo, p.etapas[2].titulo]);
+  for (const [k, i] of [0, 2].entries()) {
+    assert.equal(novas[k].material?.id ?? null, p.etapas[i].material?.id ?? null);
+    assert.equal(novas[k].recursoSugerido, p.etapas[i].material ? null : p.etapas[i].recursoSugerido);
+  }
+  status(await api('POST', `${rota}/${p.interacaoId}`, { token: s.token.formador, body: { incluir: [1] } }), 400, 'salvar de novo');
+
+  const decisao = await runAsSystem((tx: any) => tx.aiInteracao.findUnique({ where: { id: p.interacaoId }, select: { status: true, assistente: true, decididoEm: true } }));
+  assert.equal(decisao.assistente, 'gerador-trilha');
+  assert.equal(decisao.status, 'EDITADA', 'salvar parte da proposta fica como editada');
+  assert.ok(decisao.decididoEm);
+
+  const outra = ok(await api('POST', rota, { token: s.token.formador, body: pedido }), 'gerar outra');
+  ok(await api('POST', `/ia/interacoes/${outra.interacaoId}/decisao`, { token: s.token.formador, body: { decisao: 'REJEITAR' } }), 'descartar');
+  status(await api('POST', `${rota}/${outra.interacaoId}`, { token: s.token.formador, body: { incluir: [0] } }), 400, 'salvar descartada');
+});
+
 test('paineis: Inicio de quem conduz, painel da rede e acompanhamento respondem', async () => {
   ok(await api('GET', '/painel/conducao', { token: s.token.formador }), 'painel de conducao');
   ok(await api('GET', '/dashboard', { token: s.token.gestora }), 'painel da rede');

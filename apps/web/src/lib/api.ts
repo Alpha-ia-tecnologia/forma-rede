@@ -48,8 +48,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, data: unknown) =>
-    request<T>(path, { method: 'POST', body: JSON.stringify(data) }),
+  /** `signal` cancela a espera (ex.: geracao com IA que a pessoa desistiu de aguardar). */
+  post: <T>(path: string, data: unknown, opcoes?: { signal?: AbortSignal }) =>
+    request<T>(path, { method: 'POST', body: JSON.stringify(data), signal: opcoes?.signal }),
   put: <T>(path: string, data: unknown) =>
     request<T>(path, { method: 'PUT', body: JSON.stringify(data) }),
   del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),

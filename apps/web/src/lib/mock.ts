@@ -5,7 +5,7 @@ import {
   type AcompanhamentoFormacao, type AcompanhamentoFrequencia, type AuthUser, type EntregaParaAvaliar, type EntregaStatus,
   type EtapaTrilha, type EventoAssistenteStream, type FrequenciaProfessor, type MaterialTipo, type MinhaFormacao,
   type PainelConducao, type ParticipacaoFormacao, chamadaPendente,
-  ETAPA_FLUXO_LABELS, MODELOS_TRILHA, SITUACAO_FREQUENCIA_LABELS, type LinhaRelatorioConclusao, type LinhaRelatorioFrequencia,
+  ETAPA_FLUXO_LABELS, MODELOS_TRILHA, SITUACAO_FREQUENCIA_LABELS, propostaTrilhaDeExemplo, type GerarTrilhaIaDto, type PropostaTrilhaIa, type LinhaRelatorioConclusao, type LinhaRelatorioFrequencia,
   type Planejamento, type PlanoAprovado, type PlanoFormativoConteudo, type Role, type TrilhaFormacao, type TurnoAssistente,
 } from '@formarede/contracts';
 
@@ -113,7 +113,7 @@ const materiais: MaterialDemo[] = [
 // Trilha formativa da f1. Paula (professora, inscricao i1) ja concluiu as duas primeiras.
 interface EtapaDemo {
   /** materialId null: etapa de modelo ainda sem recurso (tipoPrevisto diz o tipo). */
-  id: string; formacaoId: string; materialId: string | null; tipoPrevisto?: string | null; moduloId: string | null; ordem: number;
+  id: string; formacaoId: string; materialId: string | null; tipoPrevisto?: string | null; recursoSugerido?: string | null; moduloId: string | null; ordem: number;
   titulo: string; orientacao: string | null; duracaoMin: number | null; obrigatoria: boolean;
   /** Outros cursistas que concluiram (alem da pessoa logada). */
   outrosConcluintes: number;
@@ -151,6 +151,7 @@ function trilhaDe(formacaoId: string): TrilhaFormacao {
         modulo: mod ? { id: mod.id, titulo: mod.titulo } : null,
         material: m ? { id: m.id, titulo: m.titulo, tipo: m.tipo as MaterialTipo, url: m.url, descricao: m.descricao, autoria: m.autoria, licenca: m.licenca, status: m.status } : null,
         tipoPrevisto: m ? null : ((e.tipoPrevisto ?? null) as MaterialTipo | null),
+        recursoSugerido: m ? null : (e.recursoSugerido ?? null),
         concluida: cursista && concluidasDemo.has(e.id),
         concluintes: editor ? e.outrosConcluintes + (concluidasDemo.has(e.id) ? 1 : 0) : null,
       }];
@@ -189,6 +190,9 @@ function materialDaTrilha(formacaoId: string, body: Record<string, unknown> | un
   }
   return m;
 }
+
+/** Propostas de trilha geradas nesta sessao, esperando salvar ou descartar. */
+const propostasTrilhaDemo = new Map<string, PropostaTrilhaIa & { formacaoId: string }>();
 
 function resequenciar(formacaoId: string) {
   trilhaDemo.filter((e) => e.formacaoId === formacaoId).sort((a, b) => a.ordem - b.ordem).forEach((e, i) => { e.ordem = i + 1; });
@@ -982,6 +986,51 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
     }));
     return as(trilhaDe(formacaoId));
   }
+  // Gerar com IA: no modo demonstracao, a proposta de exemplo (a mesma do provider mock da API).
+  const iaTrilha = p.match(/^\/formacoes\/([^/]+)\/trilha\/ia(?:\/([^/]+))?$/);
+  if (iaTrilha && method === 'POST') {
+    const formacaoId = iaTrilha[1] as string;
+    const interacaoId = iaTrilha[2];
+    if (!interacaoId) {
+      const f = formacoes.find((x) => x.id === formacaoId);
+      const aprovados = materiais.filter((m) => m.status === 'APROVADO')
+        .sort((a, b) => Number(b.formacoes.some((x) => x.formacao.id === formacaoId)) - Number(a.formacoes.some((x) => x.formacao.id === formacaoId)));
+      const gerada = propostaTrilhaDeExemplo(
+        { formacao: { titulo: (f?.titulo as string) ?? 'Formação', tema: (f?.tema as string) ?? null }, materiais: aprovados.map((m) => ({ id: m.id, titulo: m.titulo, tipo: m.tipo as MaterialTipo })) },
+        body as unknown as GerarTrilhaIaDto,
+      );
+      await new Promise((r) => setTimeout(r, 900)); // a espera da geracao aparece na demonstracao
+      const proposta: PropostaTrilhaIa = {
+        interacaoId: 'ia-trilha-' + Date.now(), geradoPorIA: true, provider: 'mock', modelo: 'demonstracao',
+        resumo: gerada.resumo, observacoes: gerada.observacoes,
+        etapas: gerada.etapas.map((e) => {
+          const m = e.material_id ? materiais.find((x) => x.id === e.material_id) : undefined;
+          return {
+            titulo: e.titulo, tipo: e.tipo, orientacao: e.orientacao, duracaoMin: e.duracao_min, obrigatoria: e.obrigatoria,
+            material: m ? { id: m.id, titulo: m.titulo, tipo: m.tipo as MaterialTipo } : null, recursoSugerido: m ? null : e.recurso_sugerido,
+          };
+        }),
+      };
+      propostasTrilhaDemo.set(proposta.interacaoId, { ...proposta, formacaoId });
+      return as(proposta);
+    }
+    const proposta = propostasTrilhaDemo.get(interacaoId);
+    if (!proposta || proposta.formacaoId !== formacaoId) throw new Error('Proposta não encontrada.');
+    const incluir = [...new Set(body?.incluir as number[])].filter((i) => i < proposta.etapas.length).sort((a, b) => a - b);
+    if (!incluir.length) throw new Error('Escolha ao menos uma etapa para salvar.');
+    const ultima = Math.max(0, ...trilhaDemo.filter((e) => e.formacaoId === formacaoId).map((e) => e.ordem));
+    incluir.forEach((i, k) => {
+      const e = proposta.etapas[i]!;
+      if (e.material) materialDaTrilha(formacaoId, { materialId: e.material.id });
+      trilhaDemo.push({
+        id: `et${Date.now()}-ia${k}`, formacaoId, materialId: e.material?.id ?? null, tipoPrevisto: e.material ? null : e.tipo,
+        recursoSugerido: e.material ? null : e.recursoSugerido, moduloId: null, ordem: ultima + k + 1,
+        titulo: e.titulo, orientacao: e.orientacao, duracaoMin: e.duracaoMin, obrigatoria: e.obrigatoria, outrosConcluintes: 0,
+      });
+    });
+    propostasTrilhaDemo.delete(interacaoId);
+    return as(trilhaDe(formacaoId));
+  }
   const etapaRota = p.match(/^\/trilha\/etapas\/([^/]+)(?:\/(mover|conclusao|recurso))?$/);
   if (etapaRota) {
     const e = etapaDemo(etapaRota[1] as string);
@@ -995,6 +1044,7 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
       const m = materialDaTrilha(e.formacaoId, body);
       e.materialId = m.id;
       e.tipoPrevisto = null;
+      e.recursoSugerido = null;
       if (body?.titulo) e.titulo = body.titulo as string;
       if (body?.orientacao !== undefined) e.orientacao = (body.orientacao as string) || null;
       if (body?.duracaoMin !== undefined) e.duracaoMin = body.duracaoMin as number | null;
@@ -1146,6 +1196,7 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
       planosAprovadosDemo.push({ ...r, conteudo, editado, aprovadoEm: new Date().toISOString(), aprovadoPor: usuarioDemo()?.nome ?? null });
     }
     rascunhosDemo.delete(decisaoIa[1] as string);
+    propostasTrilhaDemo.delete(decisaoIa[1] as string);
     return as({ interacaoId: decisaoIa[1], decisao: body?.decisao });
   }
   if (match(p, /^\/ia\/interacoes\/[^/]+\/sinalizar$/)) return as({ ok: true });

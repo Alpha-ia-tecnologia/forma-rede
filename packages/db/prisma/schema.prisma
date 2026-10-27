@@ -803,6 +803,8 @@ model TrilhaEtapa {
   materialId  String?  @map("material_id") @db.Uuid
   /// Tipo de recurso que o modelo previu para a etapa ainda sem material.
   tipoPrevisto MaterialTipo? @map("tipo_previsto")
+  /// Etapa proposta pela IA ainda sem recurso: o que procurar (texto da IA).
+  recursoSugerido String? @map("recurso_sugerido")
   ordem       Int
   titulo      String
   orientacao  String?
