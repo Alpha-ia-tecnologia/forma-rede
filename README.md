@@ -111,37 +111,35 @@ Rodam contra um banco real configurado como acima (`DATABASE_URL` com `formarede
 
 ## Deploy (Easypanel)
 
-Cada aplicacao e um servico **App** do Easypanel apontando para este repositorio (branch
-`main`), com builder **Dockerfile** e **Build Path `/`**: a imagem precisa da raiz do
-monorepo para enxergar `packages/`. As imagens nao levam `.env` (ver `.dockerignore`);
-as variaveis vem do servico.
+**Um servico so (recomendado).** O `Dockerfile` da raiz monta web e API na mesma imagem:
+a web atende na porta 3000 e repassa `/api/v1` para a API, que roda dentro do container.
+Um dominio, sem CORS.
 
-| Servico | Dockerfile | Porta do dominio |
-|---------|-----------|------------------|
-| web | `apps/web/Dockerfile` | 3000 |
-| api | `apps/api/Dockerfile` | 3333 |
+1. No projeto do Easypanel, crie um servico **App** ligado a este repositorio (branch `main`).
+2. Em Build, escolha **Dockerfile** e deixe os padroes: Build Path `/` e arquivo `Dockerfile`.
+3. Em Environment, cole o `.env.easypanel` (fora do git, na maquina de quem faz o deploy)
+   ou preencha a tabela abaixo.
+4. Em Domains, aponte o dominio para a porta **3000**.
+5. Clique em Deploy (salvar nao dispara o build).
 
-O worker e o Redis nao entram por enquanto: nenhuma rota enfileira tarefas.
+| Variavel | Valor |
+|----------|-------|
+| `NEXT_PUBLIC_MOCK` | `0` usa a API e o banco; `1` mostra os dados de demonstracao. Entra no build: mudar pede novo deploy |
+| `DATABASE_URL` | papel `formarede_app` (ver RLS acima) |
+| `JWT_SECRET` | `openssl rand -hex 32`; sem ele (ou com o do exemplo) a API nao sobe |
+| `JWT_EXPIRES_IN` | `8h` (a web nao renova o token; com `15m` a sessao cai no meio do uso) |
+| `ANTHROPIC_API_KEY` | Assistente pedagogico |
+| `DEEPSEEK_API_KEY` | Copiloto, quando o provider do municipio for `deepseek` |
 
-**Modo demonstracao** (dados em memoria, sem API nem banco): so o servico `web`, com
-`NEXT_PUBLIC_MOCK=1`.
+Se a API ou a web parar, o container sai e o Easypanel o reinicia; o log mostra o motivo
+(por exemplo, `JWT_SECRET ausente`). O worker e o Redis nao entram: nenhuma rota enfileira
+tarefas. Mudar o schema do banco se faz de fora, com o dono (`DIRECT_URL`):
+`pnpm db:migrate && pnpm db:rls`.
 
-**Modo real** (web + api + banco):
-
-| Servico | Variavel | Valor |
-|---------|----------|-------|
-| web | `NEXT_PUBLIC_MOCK` | `0` |
-| web | `NEXT_PUBLIC_API_URL` | endereco publico da API, sem `/api/v1` (ex.: `https://api.seudominio`) |
-| api | `DATABASE_URL` | papel `formarede_app` (ver RLS acima) |
-| api | `JWT_SECRET` | `openssl rand -hex 32`; sem ele (ou com o do exemplo) a API nao sobe |
-| api | `CORS_ORIGINS` | endereco publico da web (ex.: `https://formarede.seudominio`) |
-| api | `ANTHROPIC_API_KEY` | Assistente pedagogico |
-| api | `DEEPSEEK_API_KEY` | Copiloto, quando o provider do municipio for `deepseek` |
-
-As variaveis `NEXT_PUBLIC_*` entram no JavaScript **no build**: o Easypanel as passa como
-build args, entao mudar uma delas pede um novo deploy da web. A API so precisa do
-`DIRECT_URL` para mudar o schema, o que se faz de fora, com o dono do banco
-(`pnpm db:migrate && pnpm db:rls`).
+**Servicos separados (opcional).** `apps/web/Dockerfile` (porta 3000) e
+`apps/api/Dockerfile` (porta 3333), cada um num servico App com Build Path `/` e o caminho
+do arquivo no campo do Dockerfile. Ai a web precisa de `NEXT_PUBLIC_API_URL` com o
+endereco publico da API (sem `/api/v1`), e a API de `CORS_ORIGINS` com o da web.
 
 ## Endpoints (Fundacao)
 
