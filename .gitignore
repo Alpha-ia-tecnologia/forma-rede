@@ -1,0 +1,41 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# build
+dist/
+.next/
+out/
+*.tsbuildinfo
+
+# turbo
+.turbo/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# prisma
+packages/db/prisma/migrations/dev.db*
+
+# os / editor
+.DS_Store
+Thumbs.db
+*.log
+
+# extração temporária de requisitos
+_requisitos_extraido.txt
+
+# trava do LibreOffice ao abrir documentos
+.~lock.*#
+
+# ferramentas locais de IA e design (skills com binarios de ~23 MB cada, estado de sessao)
+.agents/
+.claude/
+.codex/
+.gemini/
+.impeccable/
+
+# documento de requisitos do cliente: fora do repositorio publico
+Documento_Requisitos_Funcionais_FORMAREDE.docx

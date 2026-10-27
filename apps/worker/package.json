@@ -1,0 +1,21 @@
+{
+  "name": "@formarede/worker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@formarede/db": "workspace:*",
+    "bullmq": "^5.13.2",
+    "ioredis": "5.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.10",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  }
+}

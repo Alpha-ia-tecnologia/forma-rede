@@ -1,0 +1,23 @@
+# Contexto de build das imagens (apps/*/Dockerfile, com Build Path na raiz).
+# Dependencias e builds sao refeitos dentro da imagem.
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/*.tsbuildinfo
+
+# Segredos e configuracao local nunca entram na imagem; as variaveis vem do Easypanel.
+**/.env
+**/.env.*
+
+.git
+.agents
+.claude
+.codex
+.gemini
+.impeccable
+.vscode
+*.docx
+.~lock.*
+_requisitos_extraido.txt
+**/test

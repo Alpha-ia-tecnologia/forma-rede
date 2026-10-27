@@ -1,0 +1,836 @@
+// FORMAREDE - Schema multi-tenant (Etapas 1 + 2).
+// Etapa 1: Organizacao, Identidade, Formacao basica, Auditoria.
+// Etapa 2: Fluxo de etapas, Modulos, Encontros/Frequencia, Inscricoes,
+//          Materiais (curadoria), Atividades/Entregas, Certificados.
+// Toda entidade abaixo do Superadmin carrega tenant_id (RLS em prisma/rls.sql).
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  // pgvector entra quando a curadoria semantica (hoje stub no worker) ganhar coluna de
+  // embedding; ate la o schema roda em servidores sem a extensao.
+  extensions = [pgcrypto]
+}
+
+enum RoleType {
+  SUPERADMIN
+  ADMIN_REDE
+  COORDENADOR
+  CURADOR
+  FORMADOR
+  PROFESSOR
+  GESTOR_ESCOLAR
+  AVALIADOR
+  SUPORTE
+  AUDITOR
+}
+
+enum UnidadeTipo {
+  ESCOLA
+  POLO
+  UNIDADE_FORMATIVA
+}
+
+enum EtapaEnsino {
+  INFANTIL
+  FUND_ANOS_INICIAIS
+  FUND_ANOS_FINAIS
+  ENSINO_MEDIO
+  EJA
+  EDUCACAO_ESPECIAL
+  ESCOLA_DO_CAMPO
+  MULTISSERIADA
+}
+
+enum FormacaoModalidade {
+  PRESENCIAL
+  VIRTUAL
+  HIBRIDA
+}
+
+enum EtapaFluxo {
+  PLANEJAMENTO
+  CURADORIA
+  DESENHO
+  EXECUCAO
+  AVALIACAO
+  CONCLUIDA
+  CANCELADA
+}
+
+enum DecisaoEtapa {
+  APROVADA
+  DEVOLVIDA
+  CANCELADA
+}
+
+enum InscricaoStatus {
+  PENDENTE
+  CONFIRMADA
+  CANCELADA
+  CONCLUIDA
+}
+
+enum EncontroStatus {
+  AGENDADO
+  REALIZADO
+  CANCELADO
+  REMARCADO
+}
+
+enum MaterialTipo {
+  DOCUMENTO
+  APRESENTACAO
+  VIDEO
+  AUDIO
+  IMAGEM
+  PLANILHA
+  LINK
+  PODCAST
+}
+
+enum MaterialStatus {
+  RASCUNHO
+  EM_REVISAO
+  APROVADO
+  REJEITADO
+}
+
+enum EntregaStatus {
+  ENVIADA
+  EM_AJUSTE
+  AVALIADA
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  APPROVE
+  REJECT
+  EXPORT
+}
+
+// ---------------------------------------------------------------------------
+// DOMINIO: ORGANIZACAO
+// ---------------------------------------------------------------------------
+
+model Tenant {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug       String   @unique
+  nome       String
+  cnpj       String?
+  codigoIbge String?  @map("codigo_ibge")
+  uf         String   @db.Char(2)
+  ativo      Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  config            TenantConfig?
+  regionais         Regional[]
+  escolas           Escola[]
+  memberships       Membership[]
+  consents          Consent[]
+  formacoes         Formacao[]
+  turmas            Turma[]
+  modulos           ModuloFormacao[]
+  transicoes        EtapaTransicao[]
+  inscricoes        Inscricao[]
+  encontros         Encontro[]
+  frequencias       Frequencia[]
+  materiais         Material[]
+  materiaisFormacao MaterialFormacao[]
+  atividades        Atividade[]
+  entregas          Entrega[]
+  certificados      Certificado[]
+  avaliacoes        Avaliacao[]
+  respostasAval     RespostaAvaliacao[]
+  participacoesAval AvaliacaoParticipacao[]
+  aiInteracoes      AiInteracao[]
+  planosFormativos  PlanoFormativo[]
+  auditLogs         AuditLog[]
+  assistenteConversas AssistenteConversa[]
+  assistenteTurnos    AssistenteTurno[]
+  trilhaEtapas        TrilhaEtapa[]
+  trilhaProgressos    TrilhaProgresso[]
+
+  @@map("tenant")
+}
+
+model TenantConfig {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String  @unique @map("tenant_id") @db.Uuid
+  logoUrl        String? @map("logo_url")
+  corPrimaria    String  @default("#0E7C6B") @map("cor_primaria")
+  corSecundaria  String  @default("#0A5546") @map("cor_secundaria")
+  dominio        String?
+  contatoSuporte String? @map("contato_suporte")
+  camposCustom   Json?   @map("campos_custom")
+  iaHabilitada   Boolean @default(true) @map("ia_habilitada")
+  iaProvider     String  @default("deepseek") @map("ia_provider")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_config")
+}
+
+model Regional {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  nome      String
+  codigo    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  escolas Escola[]
+
+  @@index([tenantId])
+  @@map("regional")
+}
+
+model Escola {
+  id         String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String        @map("tenant_id") @db.Uuid
+  regionalId String?       @map("regional_id") @db.Uuid
+  nome       String
+  tipo       UnidadeTipo   @default(ESCOLA)
+  inep       String?
+  etapas     EtapaEnsino[]
+  endereco   String?
+  municipio  String?
+  ativo      Boolean       @default(true)
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  regional    Regional?    @relation(fields: [regionalId], references: [id], onDelete: SetNull)
+  memberships Membership[]
+
+  @@index([tenantId])
+  @@index([tenantId, regionalId])
+  @@map("escola")
+}
+
+// ---------------------------------------------------------------------------
+// DOMINIO: IDENTIDADE E ACESSO
+// ---------------------------------------------------------------------------
+
+model User {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email      String   @unique
+  cpf        String?  @unique
+  nome       String
+  senhaHash  String   @map("senha_hash")
+  mfaEnabled Boolean  @default(false) @map("mfa_enabled")
+  mfaSecret  String?  @map("mfa_secret")
+  avatarUrl  String?  @map("avatar_url")
+  ativo      Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  memberships   Membership[]
+  refreshTokens RefreshToken[]
+  consents      Consent[]
+  inscricoes    Inscricao[]
+  assistenteConversas AssistenteConversa[]
+
+  @@map("user")
+}
+
+model Membership {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  role       RoleType
+  escolaId   String?  @map("escola_id") @db.Uuid
+  regionalId String?  @map("regional_id") @db.Uuid
+  ativo      Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  escola Escola? @relation(fields: [escolaId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, userId, role, escolaId])
+  @@index([userId])
+  @@index([tenantId])
+  @@map("membership")
+}
+
+model RefreshToken {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  userAgent String?   @map("user_agent")
+  ip        String?
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_token")
+}
+
+model Consent {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  documento String
+  versao    String
+  aceitoEm  DateTime @default(now()) @map("aceito_em")
+  ip        String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@map("consent")
+}
+
+// ---------------------------------------------------------------------------
+// DOMINIO: FORMACAO  (RF-017..034)
+// ---------------------------------------------------------------------------
+
+model Formacao {
+  id            String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String             @map("tenant_id") @db.Uuid
+  titulo        String
+  tema          String?
+  subtema       String?
+  objetivos     String?
+  publicoAlvo   String?            @map("publico_alvo")
+  cargaHoraria  Int                @default(0) @map("carga_horaria")
+  modalidade    FormacaoModalidade @default(PRESENCIAL)
+  etapaFluxo    EtapaFluxo         @default(PLANEJAMENTO) @map("etapa_fluxo")
+  freqMinimaPct Int                @default(75) @map("freq_minima_pct")
+  criadoPorId   String?            @map("criado_por_id") @db.Uuid
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+
+  tenant     Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  turmas     Turma[]
+  modulos    ModuloFormacao[]
+  transicoes EtapaTransicao[]
+  materiais  MaterialFormacao[]
+  atividades Atividade[]
+  avaliacoes Avaliacao[]
+  planos     PlanoFormativo[]
+  assistenteConversas AssistenteConversa[]
+  trilha     TrilhaEtapa[]
+
+  @@index([tenantId])
+  @@index([tenantId, etapaFluxo])
+  @@map("formacao")
+}
+
+model Turma {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  formacaoId String    @map("formacao_id") @db.Uuid
+  nome       String
+  vagas      Int       @default(0)
+  inicio     DateTime?
+  fim        DateTime?
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  formacao   Formacao    @relation(fields: [formacaoId], references: [id], onDelete: Cascade)
+  encontros  Encontro[]
+  inscricoes Inscricao[]
+
+  @@index([tenantId, formacaoId])
+  @@map("turma")
+}
+
+/// Modulos que estruturam a formacao (RF-019).
+model ModuloFormacao {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  formacaoId String   @map("formacao_id") @db.Uuid
+  titulo     String
+  descricao  String?
+  ordem      Int      @default(1)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  formacao  Formacao   @relation(fields: [formacaoId], references: [id], onDelete: Cascade)
+  encontros Encontro[]
+  etapasTrilha TrilhaEtapa[]
+
+  @@index([tenantId, formacaoId])
+  @@map("modulo_formacao")
+}
+
+/// Historico das mudancas de etapa do fluxo (RF-032..034): quem decidiu,
+/// qual decisao e justificativa. Trilha imutavel do processo formativo.
+model EtapaTransicao {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String       @map("tenant_id") @db.Uuid
+  formacaoId    String       @map("formacao_id") @db.Uuid
+  deEtapa       EtapaFluxo   @map("de_etapa")
+  paraEtapa     EtapaFluxo   @map("para_etapa")
+  decisao       DecisaoEtapa
+  justificativa String?
+  decididoPorId String       @map("decidido_por_id") @db.Uuid
+  createdAt     DateTime     @default(now()) @map("created_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  formacao Formacao @relation(fields: [formacaoId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, formacaoId])
+  @@map("etapa_transicao")
+}
+
+// ---------------------------------------------------------------------------
+// DOMINIO: EXECUCAO  (inscricoes, encontros, frequencia - RF-027, RF-065..073)
+// ---------------------------------------------------------------------------
+
+model Inscricao {
+  id        String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String          @map("tenant_id") @db.Uuid
+  turmaId   String          @map("turma_id") @db.Uuid
+  userId    String          @map("user_id") @db.Uuid
+  status    InscricaoStatus @default(CONFIRMADA)
+  origem    String          @default("individual")
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  turma       Turma        @relation(fields: [turmaId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  frequencias Frequencia[]
+  entregas    Entrega[]
+  certificado Certificado?
+  respostas   RespostaAvaliacao[]
+  participacoesAval AvaliacaoParticipacao[]
+  progressoTrilha TrilhaProgresso[]
+
+  @@unique([turmaId, userId])
+  @@index([tenantId, turmaId])
+  @@index([userId])
+  @@map("inscricao")
+}
+
+model Encontro {
+  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String         @map("tenant_id") @db.Uuid
+  turmaId     String         @map("turma_id") @db.Uuid
+  moduloId    String?        @map("modulo_id") @db.Uuid
+  titulo      String
+  pauta       String?
+  local       String?
+  linkVirtual String?        @map("link_virtual")
+  inicio      DateTime
+  fim         DateTime?
+  status      EncontroStatus @default(AGENDADO)
+  ata         String?
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  turma       Turma           @relation(fields: [turmaId], references: [id], onDelete: Cascade)
+  modulo      ModuloFormacao? @relation(fields: [moduloId], references: [id], onDelete: SetNull)
+  frequencias Frequencia[]
+
+  @@index([tenantId, turmaId])
+  @@map("encontro")
+}
+
+/// Registro de presenca por encontro (RF-069, RF-070).
+model Frequencia {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  encontroId    String   @map("encontro_id") @db.Uuid
+  inscricaoId   String   @map("inscricao_id") @db.Uuid
+  presente      Boolean  @default(false)
+  justificativa String?
+  registradoEm  DateTime @default(now()) @map("registrado_em")
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encontro  Encontro  @relation(fields: [encontroId], references: [id], onDelete: Cascade)
+  inscricao Inscricao @relation(fields: [inscricaoId], references: [id], onDelete: Cascade)
+
+  @@unique([encontroId, inscricaoId])
+  @@index([tenantId, encontroId])
+  @@map("frequencia")
+}
+
+// ---------------------------------------------------------------------------
+// DOMINIO: CONTEUDO  (curadoria de materiais - RF-045..054)
+// ---------------------------------------------------------------------------
+
+model Material {
+  id        String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String         @map("tenant_id") @db.Uuid
+  titulo    String
+  descricao String?
+  tipo      MaterialTipo   @default(DOCUMENTO)
+  url       String?
+  autoria   String?
+  fonte     String?
+  licenca   String?
+  tags      String[]
+  status    MaterialStatus @default(RASCUNHO)
+  /// Por que a curadoria recusou (quem cadastrou ve no acervo).
+  motivoRecusa String?     @map("motivo_recusa")
+  criadoPorId String?      @map("criado_por_id") @db.Uuid
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  formacoes MaterialFormacao[]
+  etapasTrilha TrilhaEtapa[]
+
+  @@index([tenantId, status])
+  @@map("material")
+}
+
+/// Vinculo material x formacao (colecao da formacao - RF-050, RF-054).
+model MaterialFormacao {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  materialId String   @map("material_id") @db.Uuid
+  formacaoId String   @map("formacao_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  material Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  formacao Formacao @relation(fields: [formacaoId], references: [id], onDelete: Cascade)
+
+  @@unique([materialId, formacaoId])
+  @@index([tenantId, formacaoId])
+  @@map("material_formacao")
+}
+
+// ---------------------------------------------------------------------------
+// DOMINIO: APRENDIZAGEM  (atividades e entregas - RF-083..088)
+// ---------------------------------------------------------------------------
+
+model Atividade {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  formacaoId String    @map("formacao_id") @db.Uuid
+  titulo     String
+  descricao  String?
+  criterios  String?
+  prazo      DateTime?
+  pontuacao  Int       @default(10)
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  formacao Formacao  @relation(fields: [formacaoId], references: [id], onDelete: Cascade)
+  entregas Entrega[]
+
+  @@index([tenantId, formacaoId])
+  @@map("atividade")
+}
+
+/// Entrega do participante com devolutiva do formador (RF-086..088).
+model Entrega {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String        @map("tenant_id") @db.Uuid
+  atividadeId   String        @map("atividade_id") @db.Uuid
+  inscricaoId   String        @map("inscricao_id") @db.Uuid
+  conteudo      String?
+  anexoUrl      String?       @map("anexo_url")
+  status        EntregaStatus @default(ENVIADA)
+  nota          Int?
+  feedback      String?
+  avaliadoPorId String?       @map("avaliado_por_id") @db.Uuid
+  enviadaEm     DateTime      @default(now()) @map("enviada_em")
+  avaliadaEm    DateTime?     @map("avaliada_em")
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  atividade Atividade @relation(fields: [atividadeId], references: [id], onDelete: Cascade)
+  inscricao Inscricao @relation(fields: [inscricaoId], references: [id], onDelete: Cascade)
+
+  @@unique([atividadeId, inscricaoId])
+  @@index([tenantId, atividadeId])
+  @@map("entrega")
+}
+
+// ---------------------------------------------------------------------------
+// DOMINIO: CERTIFICACAO  (RF-120..122)
+// ---------------------------------------------------------------------------
+
+/// Emitido quando as regras de conclusao sao atendidas (frequencia minima +
+/// todas as atividades entregues). Codigo publico para validacao (RF-122).
+model Certificado {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  inscricaoId  String   @unique @map("inscricao_id") @db.Uuid
+  codigo       String   @unique
+  cargaHoraria Int      @map("carga_horaria")
+  emitidoEm    DateTime @default(now()) @map("emitido_em")
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  inscricao Inscricao @relation(fields: [inscricaoId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("certificado")
+}
+
+// ---------------------------------------------------------------------------
+// DOMINIO: GESTAO / AUDITORIA
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id        String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String?     @map("tenant_id") @db.Uuid
+  userId    String?     @map("user_id") @db.Uuid
+  action    AuditAction
+  entity    String
+  entityId  String?     @map("entity_id")
+  metadata  Json?
+  ip        String?
+  userAgent String?     @map("user_agent")
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([entity, entityId])
+  @@map("audit_log")
+}
+
+// ---------------------------------------------------------------------------
+// DOMINIO: AVALIACAO  (RF-100..105)
+// ---------------------------------------------------------------------------
+
+enum AvaliacaoTipo {
+  DIAGNOSTICA
+  SATISFACAO
+  FINAL
+}
+
+/// Questionario da formacao. Perguntas em JSON:
+/// [{ id: "p1", tipo: "ESCALA" | "TEXTO", texto: string }]
+/// ESCALA = percepcao 1..5 (RF-102); TEXTO = discursiva.
+model Avaliacao {
+  id         String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String        @map("tenant_id") @db.Uuid
+  formacaoId String        @map("formacao_id") @db.Uuid
+  titulo     String
+  tipo       AvaliacaoTipo @default(SATISFACAO)
+  anonima    Boolean       @default(false)
+  perguntas  Json
+  createdAt  DateTime      @default(now()) @map("created_at")
+
+  tenant   Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  formacao Formacao            @relation(fields: [formacaoId], references: [id], onDelete: Cascade)
+  entradas RespostaAvaliacao[]
+  participacoes AvaliacaoParticipacao[]
+
+  @@index([tenantId, formacaoId])
+  @@map("avaliacao")
+}
+
+/// Respostas em JSON: [{ perguntaId, valor?: 1..5, texto?: string }].
+/// inscricaoId nulo quando a avaliacao e anonima (RF-104).
+model RespostaAvaliacao {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  avaliacaoId String   @map("avaliacao_id") @db.Uuid
+  inscricaoId String?  @map("inscricao_id") @db.Uuid
+  respostas   Json
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  avaliacao Avaliacao  @relation(fields: [avaliacaoId], references: [id], onDelete: Cascade)
+  inscricao Inscricao? @relation(fields: [inscricaoId], references: [id], onDelete: SetNull)
+
+  @@unique([avaliacaoId, inscricaoId])
+  @@index([tenantId, avaliacaoId])
+  @@map("resposta_avaliacao")
+}
+
+/// Quem ja respondeu uma avaliacao anonima. Fica separado da resposta e sem data,
+/// para nao ligar a pessoa ao conteudo; serve para mostrar o que esta pendente e
+/// impedir resposta duplicada.
+model AvaliacaoParticipacao {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String @map("tenant_id") @db.Uuid
+  avaliacaoId String @map("avaliacao_id") @db.Uuid
+  inscricaoId String @map("inscricao_id") @db.Uuid
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  avaliacao Avaliacao @relation(fields: [avaliacaoId], references: [id], onDelete: Cascade)
+  inscricao Inscricao @relation(fields: [inscricaoId], references: [id], onDelete: Cascade)
+
+  @@unique([avaliacaoId, inscricaoId])
+  @@index([tenantId, inscricaoId])
+  @@map("avaliacao_participacao")
+}
+
+// ---------------------------------------------------------------------------
+// DOMINIO: INTELIGENCIA ARTIFICIAL  (RIA-001..015)
+// ---------------------------------------------------------------------------
+
+enum AiInteracaoStatus {
+  GERADA
+  APROVADA
+  REJEITADA
+  EDITADA
+}
+
+enum PlanoStatus {
+  RASCUNHO
+  APROVADO
+  REJEITADO
+}
+
+/// Log de toda interacao de IA (RIA-004): modelo, versao do prompt, usuario,
+/// contexto, fontes e a decisao humana posterior (RIA-002). Sinalizacao de
+/// respostas incorretas pelo usuario (RIA-010).
+model AiInteracao {
+  id               String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId         String            @map("tenant_id") @db.Uuid
+  userId           String            @map("user_id") @db.Uuid
+  assistente       String
+  provider         String
+  modelo           String
+  promptVersao     String            @map("prompt_versao")
+  entrada          Json
+  saida            String
+  fontes           Json?
+  status           AiInteracaoStatus @default(GERADA)
+  decididoPorId    String?           @map("decidido_por_id") @db.Uuid
+  decididoEm       DateTime?         @map("decidido_em")
+  sinalizada       Boolean           @default(false)
+  sinalizadaMotivo String?           @map("sinalizada_motivo")
+  tokensEntrada    Int               @default(0) @map("tokens_entrada")
+  tokensSaida      Int               @default(0) @map("tokens_saida")
+  createdAt        DateTime          @default(now()) @map("created_at")
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plano  PlanoFormativo?
+
+  @@index([tenantId, assistente])
+  @@index([tenantId, createdAt])
+  @@map("ai_interacao")
+}
+
+/// Plano formativo gerado pelo copiloto (IA-01). Nasce RASCUNHO e so vira
+/// APROVADO por decisao humana (RIA-009, CA-09).
+model PlanoFormativo {
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String      @map("tenant_id") @db.Uuid
+  formacaoId    String      @map("formacao_id") @db.Uuid
+  interacaoId   String      @unique @map("interacao_id") @db.Uuid
+  conteudo      Json
+  status        PlanoStatus @default(RASCUNHO)
+  versao        Int         @default(1)
+  aprovadoPorId String?     @map("aprovado_por_id") @db.Uuid
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  formacao  Formacao    @relation(fields: [formacaoId], references: [id], onDelete: Cascade)
+  interacao AiInteracao @relation(fields: [interacaoId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, formacaoId])
+  @@map("plano_formativo")
+}
+
+// ---------------------------------------------------------------------------
+// Assistente Pedagogico (IA): conversas de professores e formadores
+// ---------------------------------------------------------------------------
+
+/// Conversa com o Assistente Pedagogico. Pertence a um usuario; o prompt fica
+/// fixo na versao em que a conversa comecou.
+model AssistenteConversa {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  formacaoId   String?  @map("formacao_id") @db.Uuid
+  titulo       String
+  promptVersao String   @map("prompt_versao")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  formacao Formacao?         @relation(fields: [formacaoId], references: [id], onDelete: SetNull)
+  turnos   AssistenteTurno[]
+
+  @@index([tenantId, userId, updatedAt])
+  @@map("assistente_conversa")
+}
+
+/// Um turno (pergunta + resposta). `mensagens` guarda as mensagens da Messages API
+/// do turno, na ordem e sem alteracao: o historico e append-only (blocos de
+/// thinking voltam ao modelo exatamente como vieram). Os demais campos sao a
+/// versao exibivel, ja com PII mascarada.
+model AssistenteTurno {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  conversaId    String   @map("conversa_id") @db.Uuid
+  pergunta      String
+  resposta      String
+  planejamentos Json     @default("[]")
+  fontes        Json     @default("[]")
+  mensagens     Json
+  interacaoId   String?  @map("interacao_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  tenant   Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversa AssistenteConversa @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, conversaId, createdAt])
+  @@map("assistente_turno")
+}
+
+// ---------------------------------------------------------------------------
+// Trilha formativa: etapas em ordem com videos, documentos, podcasts e materiais
+// ---------------------------------------------------------------------------
+
+/// Etapa da trilha de uma formacao. Todo recurso e um Material: so os APROVADOS
+/// aparecem para os cursistas (curadoria, RIA-003/006); recurso novo entra EM_REVISAO.
+model TrilhaEtapa {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  formacaoId  String   @map("formacao_id") @db.Uuid
+  moduloId    String?  @map("modulo_id") @db.Uuid
+  materialId  String   @map("material_id") @db.Uuid
+  ordem       Int
+  titulo      String
+  orientacao  String?
+  duracaoMin  Int?     @map("duracao_min")
+  obrigatoria Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  formacao  Formacao          @relation(fields: [formacaoId], references: [id], onDelete: Cascade)
+  modulo    ModuloFormacao?   @relation(fields: [moduloId], references: [id], onDelete: SetNull)
+  material  Material          @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  progresso TrilhaProgresso[]
+
+  @@index([tenantId, formacaoId, ordem])
+  @@map("trilha_etapa")
+}
+
+/// Etapa concluida por um cursista (inscricao).
+model TrilhaProgresso {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  etapaId     String   @map("etapa_id") @db.Uuid
+  inscricaoId String   @map("inscricao_id") @db.Uuid
+  concluidaEm DateTime @default(now()) @map("concluida_em")
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  etapa     TrilhaEtapa @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+  inscricao Inscricao   @relation(fields: [inscricaoId], references: [id], onDelete: Cascade)
+
+  @@unique([etapaId, inscricaoId])
+  @@index([tenantId, inscricaoId])
+  @@map("trilha_progresso")
+}
