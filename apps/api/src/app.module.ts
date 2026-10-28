@@ -18,6 +18,8 @@ import { IaModule } from './modules/ia/ia.module';
 import { AssistenteModule } from './modules/assistente/assistente.module';
 import { TrilhaModule } from './modules/trilha/trilha.module';
 import { PainelModule } from './modules/painel/painel.module';
+import { DevolutivasModule } from './modules/devolutivas/devolutivas.module';
+import { FormadoresModule } from './modules/formadores/formadores.module';
 import { JwtAuthGuard, RolesGuard } from './common/security';
 
 @Module({
@@ -39,6 +41,8 @@ import { JwtAuthGuard, RolesGuard } from './common/security';
     IaModule,
     AssistenteModule,
     TrilhaModule,
+    DevolutivasModule,
+    FormadoresModule,
     PainelModule,
   ],
   providers: [

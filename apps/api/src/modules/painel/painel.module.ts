@@ -1,11 +1,13 @@
 // Inicio de quem conduz formacoes: o que precisa de atencao agora, em todas as
 // formacoes do municipio. Cada item leva ao ponto exato da tarefa (a chamada do
 // encontro, a fila de entregas da atividade, a etapa da trilha) e cada lista so
-// vem para quem age sobre ela. As regras sao as mesmas da pagina da formacao.
+// vem para quem age sobre ela. As regras sao as mesmas da pagina da formacao, e o
+// formador ve so as turmas em que foi alocado (common/escopo).
 import { Controller, ForbiddenException, Get, Injectable, Module } from '@nestjs/common';
 import { forTenant } from '@formarede/db';
 import { AuthUser, PainelConducao, chamadaPendente, contarSemMarca } from '@formarede/contracts';
 import { CurrentUser } from '../../common/security';
+import { escopoConducao, naFormacao, naTurma } from '../../common/escopo';
 
 const tem = (u: AuthUser, p: string) => u.permissions.includes('*') || u.permissions.includes(p);
 /** Quem conduz ou acompanha formacoes (mesma regra do painel da formacao). */
@@ -20,7 +22,8 @@ export class PainelService {
     }
     const db = forTenant(user.tenantId);
     const agora = new Date();
-    const ativas = { etapaFluxo: { notIn: ['CONCLUIDA', 'CANCELADA'] as ('CONCLUIDA' | 'CANCELADA')[] } };
+    const escopo = await escopoConducao(user);
+    const ativas = { etapaFluxo: { notIn: ['CONCLUIDA', 'CANCELADA'] as ('CONCLUIDA' | 'CANCELADA')[] }, id: naFormacao(escopo) };
 
     let hoje: PainelConducao['hoje'] = null;
     let proximos: PainelConducao['proximos'] = null;
@@ -30,6 +33,7 @@ export class PainelService {
       const encontros = await db.encontro.findMany({
         where: {
           inicio: { gte: new Date(agora.getTime() - 120 * DIA), lte: new Date(agora.getTime() + 60 * DIA) },
+          turmaId: naTurma(escopo),
           turma: { formacao: ativas },
         },
         orderBy: { inicio: 'asc' },
@@ -60,13 +64,15 @@ export class PainelService {
 
     let entregas: PainelConducao['entregas'] = null;
     if (tem(user, 'entrega:read')) {
+      // So as entregas das turmas de quem abre (o formador, as dele).
+      const aguardando = { status: 'ENVIADA' as const, inscricao: { turmaId: naTurma(escopo) } };
       const atividades = await db.atividade.findMany({
-        where: { entregas: { some: { status: 'ENVIADA' } }, formacao: ativas },
+        where: { entregas: { some: aguardando }, formacao: ativas },
         orderBy: { createdAt: 'asc' },
         select: {
           id: true, titulo: true,
           formacao: { select: { id: true, titulo: true } },
-          _count: { select: { entregas: { where: { status: 'ENVIADA' } } } },
+          _count: { select: { entregas: { where: aguardando } } },
         },
       });
       entregas = atividades.map((a) => ({ atividadeId: a.id, titulo: a.titulo, formacao: a.formacao, aguardando: a._count.entregas }));
@@ -87,7 +93,7 @@ export class PainelService {
       curadoria = [...porFormacao.values()];
     }
 
-    return { hoje, proximos, chamadasPendentes, entregas, curadoria };
+    return { hoje, proximos, chamadasPendentes, entregas, curadoria, semTurmas: escopo ? escopo.turmas.length === 0 : null };
   }
 }
 

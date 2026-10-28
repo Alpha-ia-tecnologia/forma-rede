@@ -4,7 +4,8 @@ import {
   ordenarPorPrioridade, permissionsForRole, resumirAcompanhamento, resumirFrequencia,
   type AcompanhamentoFormacao, type AcompanhamentoFrequencia, type AuthUser, type EntregaParaAvaliar, type EntregaStatus,
   type EtapaTrilha, type EventoAssistenteStream, type FrequenciaProfessor, type MaterialTipo, type MinhaFormacao,
-  type PainelConducao, type ParticipacaoFormacao, chamadaPendente,
+  type PainelConducao, type ParticipacaoFormacao, chamadaPendente, type DevolutivaFormacao, type DevolutivasPendentes, type TemaDevolutiva,
+  conduzSoTurmasAlocadas, formacaoEncerrada, type ConviteFormador, type FormadorRede, type TurmaAlocacao,
   ETAPA_FLUXO_LABELS, MODELOS_TRILHA, SITUACAO_FREQUENCIA_LABELS, propostaTrilhaDeExemplo, type GerarTrilhaIaDto, type PropostaTrilhaIa, type LinhaRelatorioConclusao, type LinhaRelatorioFrequencia,
   type Planejamento, type PlanoAprovado, type PlanoFormativoConteudo, type Role, type TrilhaFormacao, type TurnoAssistente,
 } from '@formarede/contracts';
@@ -54,7 +55,7 @@ const formacoes: Record<string, unknown>[] = [
       { id: 'a3', titulo: 'Registro da aplicação em sala', descricao: 'Aplique a atividade de leitura planejada e conte como foi: o que funcionou, o que você mudaria e duas evidências da aprendizagem das crianças (fotos de produções ou falas transcritas).', criterios: 'Descrição da aplicação; duas evidências; reflexão sobre ajustes.', prazo: '2026-11-12T23:59:00-03:00', pontuacao: 10 },
     ],
     transicoes: [
-      { id: 'tr1', deEtapa: 'DESENHO', paraEtapa: 'EXECUCAO', decisao: 'APROVADA', justificativa: null, createdAt: '2026-07-01T14:00:00-03:00', decididoPor: 'Ana Gestora (Rede SP)' },
+      { id: 'tr1', deEtapa: 'DESENHO', paraEtapa: 'EXECUCAO', decisao: 'APROVADA', justificativa: null, createdAt: '2026-07-01T14:00:00-03:00', decididoPor: 'Bianca Curadora' },
       { id: 'tr2', deEtapa: 'CURADORIA', paraEtapa: 'DESENHO', decisao: 'APROVADA', justificativa: null, createdAt: '2026-06-20T10:00:00-03:00', decididoPor: 'Bianca Curadora' },
     ],
   },
@@ -62,8 +63,10 @@ const formacoes: Record<string, unknown>[] = [
     id: 'f2', titulo: 'BNCC na Prática: Matemática', tema: 'Pensamento computacional',
     objetivos: 'Integrar habilidades da BNCC ao cotidiano da sala de aula.',
     cargaHoraria: 30, modalidade: 'HIBRIDA', etapaFluxo: 'EXECUCAO', freqMinimaPct: 75,
-    _count: { turmas: 0, modulos: 0, atividades: 0 },
-    modulos: [], turmas: [], materiais: [], atividades: [], transicoes: [],
+    _count: { turmas: 1, modulos: 0, atividades: 0 },
+    // Turma aberta e ainda sem formador: aparece como pendencia no Inicio da curadoria.
+    modulos: [], turmas: [{ id: 't2', nome: 'Turma 2026.2', vagas: 25, _count: { inscricoes: 0, encontros: 0 } }],
+    materiais: [], atividades: [], transicoes: [],
   },
   {
     id: 'f3', titulo: 'Educação inclusiva na prática', tema: 'Atendimento educacional especializado',
@@ -74,7 +77,7 @@ const formacoes: Record<string, unknown>[] = [
     turmas: [{ id: 't3', nome: 'Turma 2026.0', vagas: 40, _count: { inscricoes: 32, encontros: 4 } }],
     materiais: [],
     atividades: [{ id: 'a31', titulo: 'Plano de adaptação para um estudante', descricao: 'Escolha um estudante da sua turma e descreva as adaptações de uma aula.', criterios: null, prazo: '2026-05-30T23:59:00-03:00', pontuacao: 10 }],
-    transicoes: [{ id: 'tr31', deEtapa: 'AVALIACAO', paraEtapa: 'CONCLUIDA', decisao: 'APROVADA', justificativa: null, createdAt: '2026-06-10T10:00:00-03:00', decididoPor: 'Ana Gestora (Rede SP)' }],
+    transicoes: [{ id: 'tr31', deEtapa: 'AVALIACAO', paraEtapa: 'CONCLUIDA', decisao: 'APROVADA', justificativa: null, createdAt: '2026-06-10T10:00:00-03:00', decididoPor: 'Bianca Curadora' }],
   },
 ];
 
@@ -126,6 +129,71 @@ const trilhaDemo: EtapaDemo[] = [
   { id: 'et5', formacaoId: 'f1', materialId: 'mat7', moduloId: 'm3', ordem: 5, titulo: 'O desafio da alfabetização no Brasil', orientacao: 'Para a reflexão final: o que os dados nacionais dizem sobre a sua escola?', duracaoMin: 27, obrigatoria: true, outrosConcluintes: 0 },
 ];
 const concluidasDemo = new Set(['et1', 'et2']);
+
+// Devolutivas da curadoria (f1): uma esperando quem conduz e uma ja resolvida.
+type DevolutivaDemo = Omit<DevolutivaFormacao, 'aguarda'> & { formacaoId: string };
+const devolutivasDemo: DevolutivaDemo[] = [
+  {
+    id: 'dv1', formacaoId: 'f1', tema: 'TRILHA', autor: 'Bianca Curadora', criadaEm: '2026-10-26T14:20:00-03:00', resolvidaEm: null, resolvidaPor: null,
+    texto: 'A etapa 4 (BNCC) está opcional, mas ela prepara a reflexão do encontro 3. Sugiro torná-la obrigatória e trocar o PDF inteiro pelo trecho de Língua Portuguesa do acervo.',
+    respostas: [],
+  },
+  {
+    id: 'dv2', formacaoId: 'f1', tema: 'ATIVIDADES', autor: 'Bianca Curadora', criadaEm: '2026-10-14T09:05:00-03:00',
+    resolvidaEm: '2026-10-16T17:40:00-03:00', resolvidaPor: 'Carlos Formador',
+    texto: 'Os critérios do plano de aula de leitura compartilhada ainda não dizem como o cursista registra a aplicação. Inclua o registro (foto do quadro ou relato curto).',
+    respostas: [
+      { id: 'dr1', texto: 'Incluí "registro da aplicação" nos critérios e avisei a turma no encontro 2.', autor: 'Carlos Formador', daCuradoria: false, criadaEm: '2026-10-16T17:38:00-03:00' },
+    ],
+  },
+];
+const aguardaDemo = (d: DevolutivaDemo): DevolutivaFormacao['aguarda'] =>
+  d.resolvidaEm ? null : (d.respostas.at(-1)?.daCuradoria ?? true) ? 'CONDUCAO' : 'CURADORIA';
+const curadoriaDemo = (u: AuthUser | null) => !!u && (u.permissions.includes('*') || u.permissions.includes('devolutiva:criar'));
+const devolutivasDe = (formacaoId: string): DevolutivaFormacao[] =>
+  devolutivasDemo.filter((d) => d.formacaoId === formacaoId)
+    .sort((a, b) => b.criadaEm.localeCompare(a.criadaEm))
+    .map((d) => {
+      const { formacaoId: _formacao, ...copia } = structuredClone(d);
+      return { ...copia, aguarda: aguardaDemo(d) };
+    });
+
+// Formadores do municipio e as turmas de cada um (o formador ve so as turmas em que esta).
+const formadoresDemo: { id: string; nome: string; email: string; desde: string }[] = [
+  { id: 'u-FORMADOR', nome: 'Carlos Formador', email: 'formador.sp@formarede.gov.br', desde: '2026-02-03T10:00:00-03:00' },
+  { id: 'u-form-2', nome: 'Daniela Rocha', email: 'daniela.rocha@rede.gov.br', desde: '2026-03-10T10:00:00-03:00' },
+  { id: 'u-form-3', nome: 'Marcos Lima', email: 'marcos.lima@rede.gov.br', desde: '2026-10-21T15:30:00-03:00' },
+];
+const alocacoesDemo = new Map<string, string[]>([['t1', ['u-FORMADOR']], ['t3', ['u-form-2']]]);
+const formadoresDaTurma = (turmaId: string) =>
+  (alocacoesDemo.get(turmaId) ?? []).flatMap((id) => formadoresDemo.filter((f) => f.id === id).map(({ id: fid, nome }) => ({ id: fid, nome })));
+function turmasDemo() {
+  return formacoes.flatMap((f) => (f.turmas as { id: string; nome: string; _count: { inscricoes: number } }[]).map((t) => ({
+    id: t.id, nome: t.nome, inscritos: t._count.inscricoes,
+    formacao: { id: f.id as string, titulo: f.titulo as string }, encerrada: formacaoEncerrada(f.etapaFluxo as string),
+  })));
+}
+/** Turmas do formador logado (null: a pessoa ve o municipio todo). */
+function turmasDoUsuarioDemo(): string[] | null {
+  const u = usuarioDemo();
+  if (!u || !conduzSoTurmasAlocadas(u.role)) return null;
+  return [...alocacoesDemo.entries()].filter(([, ids]) => ids.includes(u.id)).map(([t]) => t);
+}
+function formadorRedeDemo(f: (typeof formadoresDemo)[number]): FormadorRede {
+  return { ...f, turmas: turmasDemo().filter((t) => (alocacoesDemo.get(t.id) ?? []).includes(f.id)).map(({ id, nome, formacao }) => ({ id, nome, formacao })) };
+}
+// Links de cadastro: um ativo (ja usado uma vez) e um expirado. Na demo, um link que nao
+// esta na lista (ex.: aberto depois de recarregar a pagina) vale como link sem turma.
+const convitesDemo: (Omit<ConviteFormador, 'situacao' | 'turmas'> & { turmaIds: string[] })[] = [
+  { id: 'cv1', token: 'demo-link-turma-2026-2-matematica', criadoEm: '2026-10-25T09:00:00-03:00', criadoPor: 'Bianca Curadora', expiraEm: '2026-11-01T09:00:00-03:00', desativadoEm: null, cadastros: 1, turmaIds: ['t2'] },
+  { id: 'cv0', token: 'demo-link-expirado-setembro', criadoEm: '2026-09-01T09:00:00-03:00', criadoPor: 'Bianca Curadora', expiraEm: '2026-09-08T09:00:00-03:00', desativadoEm: null, cadastros: 2, turmaIds: [] },
+];
+function conviteDemo(c: (typeof convitesDemo)[number]): ConviteFormador {
+  const situacao = c.desativadoEm ? 'DESATIVADO' : new Date(c.expiraEm).getTime() < Date.now() ? 'EXPIRADO' : 'ATIVO';
+  const turmas = turmasDemo().filter((t) => c.turmaIds.includes(t.id)).map(({ id, nome, formacao }) => ({ id, nome, formacao }));
+  const { turmaIds: _turmas, ...resto } = c;
+  return { ...resto, situacao, turmas };
+}
 
 /** Quem esta logado no modo demonstracao (mesma chave do lib/api). */
 function usuarioDemo(): AuthUser | null {
@@ -497,6 +565,11 @@ function painelDemo(): PainelConducao {
     throw new Error('Este painel é de quem conduz ou acompanha formações.');
   }
   const agora = new Date();
+  const minhas = turmasDoUsuarioDemo();
+  // Os dados de conducao da demo sao os da Turma 2026.1: so quem a conduz (ou ve tudo) os recebe.
+  if (minhas && !minhas.includes('t1')) {
+    return { hoje: [], proximos: [], chamadasPendentes: [], entregas: [], curadoria: [], semTurmas: minhas.length === 0 };
+  }
   const f1 = { id: 'f1', titulo: 'Alfabetização na Idade Certa' };
   const lista = encontros.map((e) => ({
     ...encontroResumo(e), turma: { id: 't1', nome: 'Turma 2026.1' }, formacao: f1,
@@ -518,6 +591,7 @@ function painelDemo(): PainelConducao {
         return n ? [{ formacao: f1, etapas: n }] : [];
       })()
       : null,
+    semTurmas: minhas ? minhas.length === 0 : null,
   };
 }
 
@@ -800,7 +874,10 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
   }
 
   // ----- Formações -----
-  if (p === '/formacoes' && method === 'GET') return as(formacoes);
+  if (p === '/formacoes' && method === 'GET') {
+    const minhas = turmasDoUsuarioDemo();
+    return as(minhas ? formacoes.filter((f) => (f.turmas as { id: string }[]).some((t) => minhas.includes(t.id))) : formacoes);
+  }
   if (p === '/formacoes' && method === 'POST') {
     const n = {
       id: 'f' + (formacoes.length + 1),
@@ -821,7 +898,13 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
   }
   const fDetail = p.match(/^\/formacoes\/([^/]+)$/);
   // Copia: a tela recarrega o detalhe depois de mexer na trilha e precisa de um objeto novo.
-  if (fDetail && method === 'GET') return as(structuredClone(formacoes.find((x) => x.id === fDetail[1]) ?? formacoes[0]));
+  if (fDetail && method === 'GET') {
+    const f = structuredClone(formacoes.find((x) => x.id === fDetail[1]) ?? formacoes[0]!);
+    const minhas = turmasDoUsuarioDemo();
+    if (minhas && !(f.turmas as { id: string }[]).some((t) => minhas.includes(t.id))) throw new Error('Formação não encontrada.');
+    f.turmas = (f.turmas as { id: string }[]).filter((t) => !minhas || minhas.includes(t.id)).map((t) => ({ ...t, formadores: formadoresDaTurma(t.id) }));
+    return as(f);
+  }
   // Encerrar ou reabrir (quem cria decide): fica no historico, como na API.
   const encerramento = p.match(/^\/formacoes\/([^/]+)\/(encerrar|reabrir)$/);
   if (encerramento && method === 'POST') {
@@ -833,6 +916,49 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
     f.etapaFluxo = para;
     (f.transicoes as unknown[]).unshift({ id: 'tr' + Date.now(), deEtapa: de, paraEtapa: para, decisao: para === 'CONCLUIDA' ? 'APROVADA' : 'DEVOLVIDA', justificativa: null, createdAt: new Date().toISOString(), decididoPor: usuarioDemo()?.nome ?? null });
     return as(f);
+  }
+  // Devolutivas da curadoria: mesma regra da API (a vez e de quem nao escreveu por ultimo).
+  const devF = p.match(/^\/formacoes\/([^/]+)\/devolutivas$/);
+  if (devF && method === 'GET') return as(devolutivasDe(devF[1]!));
+  if (devF && method === 'POST') {
+    if (!curadoriaDemo(usuarioDemo())) throw new Error('Sem permissão para esta ação.');
+    devolutivasDemo.push({
+      id: 'dv' + Date.now(), formacaoId: devF[1]!, tema: ((body?.tema as TemaDevolutiva) ?? 'GERAL'), texto: String(body?.texto ?? '').trim(),
+      autor: usuarioDemo()?.nome ?? null, criadaEm: new Date().toISOString(), resolvidaEm: null, resolvidaPor: null, respostas: [],
+    });
+    return as(devolutivasDe(devF[1]!));
+  }
+  if (p === '/devolutivas/pendentes') {
+    const vez = curadoriaDemo(usuarioDemo()) ? 'CURADORIA' : 'CONDUCAO';
+    const minhas = turmasDoUsuarioDemo();
+    const grupos = new Map<string, DevolutivasPendentes>();
+    for (const d of devolutivasDemo) {
+      const f = formacaoDemo(d.formacaoId);
+      // O formador recebe so as devolutivas das formacoes em que foi alocado.
+      if (minhas && !(f?.turmas as { id: string }[] | undefined)?.some((t) => minhas.includes(t.id))) continue;
+      if (!f || aguardaDemo(d) !== vez || ['CONCLUIDA', 'CANCELADA'].includes(f.etapaFluxo as string)) continue;
+      const g = grupos.get(d.formacaoId) ?? { formacao: { id: d.formacaoId, titulo: f.titulo as string }, quantidade: 0 };
+      g.quantidade += 1;
+      grupos.set(d.formacaoId, g);
+    }
+    return as([...grupos.values()]);
+  }
+  const devAcao = p.match(/^\/devolutivas\/([^/]+)\/(respostas|resolucao)$/);
+  if (devAcao && method === 'POST') {
+    const d = devolutivasDemo.find((x) => x.id === devAcao[1]);
+    if (!d) throw new Error('Devolutiva não encontrada.');
+    const u = usuarioDemo();
+    if (devAcao[2] === 'respostas') {
+      if (d.resolvidaEm) throw new Error('Esta devolutiva já foi resolvida; reabra para continuar a conversa.');
+      d.respostas.push({ id: 'dr' + Date.now(), texto: String(body?.texto ?? '').trim(), autor: u?.nome ?? null, daCuradoria: curadoriaDemo(u), criadaEm: new Date().toISOString() });
+    } else if (body?.resolvida) {
+      d.resolvidaEm = new Date().toISOString();
+      d.resolvidaPor = u?.nome ?? null;
+    } else {
+      d.resolvidaEm = null;
+      d.resolvidaPor = null;
+    }
+    return as(devolutivasDe(d.formacaoId));
   }
   const fSub = p.match(/^\/formacoes\/([^/]+)\/(modulos|turmas|atividades|avaliacoes)$/);
   if (fSub) {
@@ -852,14 +978,82 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
     }
     if (f && fSub[2] === 'turmas') {
       const arr = f.turmas as { id: string; nome: string; vagas: number; _count: { inscricoes: number; encontros: number } }[];
-      arr.push({ id: `t${arr.length + 1}-${f.id}`, nome: (body?.nome as string) ?? 'Turma', vagas: (body?.vagas as number) ?? 0, _count: { inscricoes: 0, encontros: 0 } });
+      const id = `t${arr.length + 1}-${f.id}`;
+      arr.push({ id, nome: (body?.nome as string) ?? 'Turma', vagas: (body?.vagas as number) ?? 0, _count: { inscricoes: 0, encontros: 0 } });
       (f._count as { turmas: number }).turmas = arr.length;
+      const formadorIds = (body?.formadorIds as string[] | undefined) ?? [];
+      if (formadorIds.length) alocacoesDemo.set(id, [...new Set(formadorIds)]);
     }
     return as({ ok: true });
   }
 
+  // ----- Formadores: alocacao nas turmas e links de cadastro -----
+  if (p === '/formadores' && method === 'GET') {
+    return as([...formadoresDemo].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')).map(formadorRedeDemo));
+  }
+  if (p === '/turmas' && method === 'GET') {
+    const lista: TurmaAlocacao[] = turmasDemo().map((t) => ({ ...t, formadores: formadoresDaTurma(t.id) }));
+    return as(lista.sort((a, b) => Number(a.encerrada) - Number(b.encerrada) || Number(a.formadores.length > 0) - Number(b.formadores.length > 0)));
+  }
+  const turmaForm = p.match(/^\/turmas\/([^/]+)\/formadores$/);
+  if (turmaForm && method === 'PUT') {
+    alocacoesDemo.set(turmaForm[1]!, [...new Set((body?.formadorIds as string[]) ?? [])]);
+    return as(formadoresDaTurma(turmaForm[1]!));
+  }
+  const formTurmas = p.match(/^\/formadores\/([^/]+)\/turmas$/);
+  if (formTurmas && method === 'PUT') {
+    const fid = formTurmas[1]!;
+    const novas = new Set((body?.turmaIds as string[]) ?? []);
+    for (const t of turmasDemo()) {
+      const atuais = (alocacoesDemo.get(t.id) ?? []).filter((x) => x !== fid);
+      alocacoesDemo.set(t.id, novas.has(t.id) ? [...atuais, fid] : atuais);
+    }
+    const f = formadoresDemo.find((x) => x.id === fid);
+    if (!f) throw new Error('Formador não encontrado.');
+    return as(formadorRedeDemo(f));
+  }
+  if (p === '/convites' && method === 'GET') return as(convitesDemo.map(conviteDemo));
+  if (p === '/convites' && method === 'POST') {
+    const dias = Number(body?.validadeDias ?? 7);
+    const c = {
+      id: 'cv' + Date.now(), token: `demo-${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`,
+      criadoEm: new Date().toISOString(), criadoPor: usuarioDemo()?.nome ?? null,
+      expiraEm: new Date(Date.now() + dias * 24 * 60 * 60 * 1000).toISOString(), desativadoEm: null, cadastros: 0,
+      turmaIds: (body?.turmaIds as string[]) ?? [],
+    };
+    convitesDemo.unshift(c);
+    return as(conviteDemo(c));
+  }
+  const desativar = p.match(/^\/convites\/([^/]+)\/desativar$/);
+  if (desativar && method === 'POST') {
+    const c = convitesDemo.find((x) => x.id === desativar[1]);
+    if (!c) throw new Error('Link não encontrado.');
+    c.desativadoEm = new Date().toISOString();
+    return as(convitesDemo.map(conviteDemo));
+  }
+  const publico = p.match(/^\/convites\/publico\/([^/]+)(\/cadastro)?$/);
+  if (publico) {
+    const token = decodeURIComponent(publico[1]!);
+    const salvo = convitesDemo.find((x) => x.token === token);
+    const c = salvo ? conviteDemo(salvo) : null;
+    if (c && c.situacao !== 'ATIVO') throw new Error('Este link de cadastro não vale mais. Peça um novo à curadoria do seu município.');
+    if (!publico[2]) return as({ municipio: TENANT.nome, expiraEm: c?.expiraEm ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), turmas: c?.turmas ?? [] });
+    const email = String(body?.email ?? '').trim().toLowerCase();
+    if (formadoresDemo.some((f) => f.email === email) || /prof|curador|admin|super/.test(email)) {
+      throw new Error('Este e-mail já tem cadastro na plataforma. Use a senha dessa conta, ou outro e-mail.');
+    }
+    const novo = { id: `u-form-${formadoresDemo.length + 1}-${Date.now()}`, nome: String(body?.nome ?? '').trim(), email, desde: new Date().toISOString() };
+    formadoresDemo.push(novo);
+    for (const t of c?.turmas ?? []) alocacoesDemo.set(t.id, [...(alocacoesDemo.get(t.id) ?? []), novo.id]);
+    if (salvo) salvo.cadastros += 1;
+    const user: AuthUser = { id: novo.id, email, nome: novo.nome, tenantId: TENANT.id, tenantSlug: TENANT.slug, role: 'FORMADOR', permissions: permissionsForRole('FORMADOR') };
+    return as({ accessToken: 'mock-token', user, tenants: [{ slug: TENANT.slug, nome: TENANT.nome, role: 'FORMADOR' }] });
+  }
+
   // ----- Encontros -----
   if (p === '/encontros' && method === 'GET') {
+    const minhas = turmasDoUsuarioDemo();
+    if (minhas && !minhas.includes('t1')) return as([]);
     return as(encontros.map((e) => ({ ...e, semMarca: semMarcaDemo(e.id), _count: { frequencias: PROFESSORES_DEMO.filter((_, idx) => marcaDemo(e.id, idx) !== '').length } })));
   }
   if (p === '/encontros' && method === 'POST') {

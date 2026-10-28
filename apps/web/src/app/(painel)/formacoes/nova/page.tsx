@@ -3,7 +3,8 @@
 // (modalidade, cargas e modulos), turmas e revisao. A barra presa ao fim da tela oferece
 // "Salvar formacao" em qualquer passo assim que o obrigatorio (o titulo) esta preenchido;
 // salvo, volta para a lista de formacoes com a confirmacao. Cria a formacao e, em seguida,
-// modulos e turmas; falhas parciais sao reportadas com honestidade.
+// modulos e turmas; falhas parciais sao reportadas com honestidade. Quem aloca formadores
+// (curadoria) ja escolhe quem conduz cada turma: o formador ve so as turmas em que esta.
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -11,9 +12,10 @@ import { MODALIDADES } from '@formarede/contracts';
 import { api, getUser } from '../../../../lib/api';
 import { useSaidaProtegida } from '../../../../lib/saida';
 import { PageHeader, Note, Field, Icon } from '../../ui';
+import { EscolhaFormadores, useFormadoresRede } from '../../formadores/alocacao';
 
 interface ModuloDraft { titulo: string; }
-interface TurmaDraft { nome: string; vagas: number; }
+interface TurmaDraft { nome: string; vagas: number; formadorIds: string[]; }
 
 const PASSOS = ['Identificação', 'Estrutura', 'Turmas', 'Revisão'] as const;
 
@@ -45,6 +47,10 @@ export default function NovaFormacaoPage() {
   const [turmas, setTurmas] = useState<TurmaDraft[]>([]);
   const [novaTurma, setNovaTurma] = useState('');
   const [novasVagas, setNovasVagas] = useState(30);
+  const [novosFormadores, setNovosFormadores] = useState<string[]>([]);
+  const alocar = !!user && (user.permissions.includes('*') || user.permissions.includes('formador:alocar'));
+  const { formadores } = useFormadoresRede(alocar);
+  const nomesDe = (ids: string[]) => ids.map((id) => formadores?.find((f) => f.id === id)?.nome).filter(Boolean).join(', ');
   // Submissao
   const [erro, setErro] = useState<string | null>(null);
   const [criando, setCriando] = useState(false);
@@ -74,8 +80,9 @@ export default function NovaFormacaoPage() {
   function addTurma() {
     const n = novaTurma.trim();
     if (n.length < 2) return;
-    setTurmas((t) => [...t, { nome: n, vagas: novasVagas }]);
+    setTurmas((t) => [...t, { nome: n, vagas: novasVagas, formadorIds: novosFormadores }]);
     setNovaTurma('');
+    setNovosFormadores([]);
   }
 
   async function criar() {
@@ -98,7 +105,7 @@ export default function NovaFormacaoPage() {
         catch { falhas.push(`módulo "${m.titulo}"`); }
       }
       for (const t of turmas) {
-        try { await api.post(`/formacoes/${f.id}/turmas`, { nome: t.nome, vagas: t.vagas }); }
+        try { await api.post(`/formacoes/${f.id}/turmas`, { nome: t.nome, vagas: t.vagas, formadorIds: t.formadorIds }); }
         catch { falhas.push(`turma "${t.nome}"`); }
       }
       // A lista mostra "Formacao salva" (e o que nao entrou, se algo falhou) com a nova em destaque.
@@ -239,11 +246,17 @@ export default function NovaFormacaoPage() {
               </Field>
               <button type="button" className="btn btn-subtle" onClick={addTurma} disabled={novaTurma.trim().length < 2}>Adicionar</button>
             </div>
+            {alocar && (
+              <div style={{ marginTop: 12 }}>
+                <EscolhaFormadores formadores={formadores} marcados={novosFormadores} aoMudar={setNovosFormadores}
+                  legenda="Quem conduz esta turma (opcional)" />
+              </div>
+            )}
             {turmas.length > 0 && (
               <ul style={{ listStyle: 'none', padding: 0, margin: '12px 0 0', display: 'grid', gap: 6 }}>
                 {turmas.map((t, i) => (
                   <li key={i} style={{ ...chipRemovivel, justifyContent: 'space-between' }}>
-                    <span>{t.nome} <span className="muted">· {t.vagas} vagas</span></span>
+                    <span>{t.nome} <span className="muted">· {t.vagas} vagas{t.formadorIds.length ? ` · ${nomesDe(t.formadorIds)}` : alocar ? ' · sem formador' : ''}</span></span>
                     <button type="button" style={btnX} aria-label={`Remover ${t.nome}`} onClick={() => setTurmas((arr) => arr.filter((_, j) => j !== i))}>
                       <Icon size={14}><path d="M6 6l12 12" /><path d="M18 6 6 18" /></Icon>
                     </button>
@@ -280,7 +293,7 @@ export default function NovaFormacaoPage() {
             <p style={{ fontSize: 'var(--text-xs)', margin: '8px 0 0' }}><b>Módulos:</b> {modulos.map((m, i) => `${i + 1}. ${m.titulo}`).join(' · ')}</p>
           )}
           {turmas.length > 0 && (
-            <p style={{ fontSize: 'var(--text-xs)', margin: '8px 0 0' }}><b>Turmas:</b> {turmas.map((t) => `${t.nome} (${t.vagas} vagas)`).join(' · ')}</p>
+            <p style={{ fontSize: 'var(--text-xs)', margin: '8px 0 0' }}><b>Turmas:</b> {turmas.map((t) => `${t.nome} (${t.vagas} vagas${t.formadorIds.length ? `, com ${nomesDe(t.formadorIds)}` : ''})`).join(' · ')}</p>
           )}
           <Note tom="info">Materiais, atividades e pesquisas são vinculados depois, na página da formação.</Note>
         </section>

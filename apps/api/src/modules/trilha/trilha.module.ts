@@ -7,6 +7,7 @@
 // edita substitui titulo, orientacao e recurso, e so entao a etapa chega aos cursistas.
 // Gerar com IA: o Gerador de trilhas (agente LangGraph em @formarede/ai) le a formacao e o
 // acervo aprovado e propoe as etapas; nada entra na trilha antes de quem edita salvar.
+// O formador le e edita so a trilha das formacoes em que foi alocado (common/escopo).
 import {
   BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Injectable, Logger, Module,
   NotFoundException, Param, Post, Put, ServiceUnavailableException,
@@ -26,6 +27,7 @@ import {
 import { CurrentUser, RequirePermissions } from '../../common/security';
 import { ZodValidationPipe } from '../../common/http';
 import { AuditService } from '../../audit/audit.module';
+import { exigirFormacao } from '../../common/escopo';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const INSCRITO = { in: ['CONFIRMADA', 'CONCLUIDA'] as ('CONFIRMADA' | 'CONCLUIDA')[] };
@@ -40,18 +42,20 @@ export class TrilhaService {
   private readonly logger = new Logger('Trilha');
   constructor(private readonly audit: AuditService) {}
 
-  private async formacaoExiste(tenantId: string, formacaoId: string) {
+  private async formacaoExiste(user: AuthUser, formacaoId: string) {
     if (!UUID.test(formacaoId)) throw new NotFoundException('Formação não encontrada.');
-    const f = await forTenant(tenantId).formacao.findFirst({ where: { id: formacaoId }, select: { id: true } });
+    const f = await forTenant(user.tenantId).formacao.findFirst({ where: { id: formacaoId }, select: { id: true } });
     if (!f) throw new NotFoundException('Formação não encontrada.');
+    await exigirFormacao(user, formacaoId);
   }
 
-  private async etapa(tenantId: string, etapaId: string) {
+  private async etapa(user: AuthUser, etapaId: string) {
     if (!UUID.test(etapaId)) throw new NotFoundException('Etapa não encontrada.');
-    const e = await forTenant(tenantId).trilhaEtapa.findFirst({
+    const e = await forTenant(user.tenantId).trilhaEtapa.findFirst({
       where: { id: etapaId }, include: { material: { select: { status: true } } },
     });
     if (!e) throw new NotFoundException('Etapa não encontrada.');
+    await exigirFormacao(user, e.formacaoId, 'Etapa não encontrada.');
     return e;
   }
 
@@ -63,7 +67,7 @@ export class TrilhaService {
   }
 
   async obter(user: AuthUser, formacaoId: string): Promise<TrilhaFormacao> {
-    await this.formacaoExiste(user.tenantId, formacaoId);
+    await this.formacaoExiste(user, formacaoId);
     const db = forTenant(user.tenantId);
     const editor = podeEditar(user);
     const inscricao = await db.inscricao.findFirst({
@@ -140,7 +144,7 @@ export class TrilhaService {
   }
 
   async criar(user: AuthUser, formacaoId: string, dto: CriarEtapaTrilhaDto): Promise<TrilhaFormacao> {
-    await this.formacaoExiste(user.tenantId, formacaoId);
+    await this.formacaoExiste(user, formacaoId);
     await this.validarModulo(user.tenantId, formacaoId, dto.moduloId);
     const db = forTenant(user.tenantId);
     const material = await this.resolverMaterial(user, formacaoId, dto);
@@ -158,7 +162,7 @@ export class TrilhaService {
 
   /** Poe as etapas do modelo no fim da trilha, sem recurso (so quem edita as ve). */
   async aplicarModelo(user: AuthUser, formacaoId: string, dto: AplicarModeloTrilhaDto): Promise<TrilhaFormacao> {
-    await this.formacaoExiste(user.tenantId, formacaoId);
+    await this.formacaoExiste(user, formacaoId);
     const modelo = MODELOS_TRILHA.find((m) => m.id === dto.modeloId);
     if (!modelo) throw new BadRequestException('Escolha um dos modelos de trilha.');
     const db = forTenant(user.tenantId);
@@ -175,7 +179,7 @@ export class TrilhaService {
 
   /** Troca o recurso da etapa (a do modelo recebe o primeiro) e, junto, os textos dela. */
   async substituir(user: AuthUser, etapaId: string, dto: SubstituirEtapaTrilhaDto): Promise<TrilhaFormacao> {
-    const e = await this.etapa(user.tenantId, etapaId);
+    const e = await this.etapa(user, etapaId);
     await this.validarModulo(user.tenantId, e.formacaoId, dto.moduloId);
     const material = await this.resolverMaterial(user, e.formacaoId, dto);
     await forTenant(user.tenantId).trilhaEtapa.update({
@@ -262,7 +266,7 @@ export class TrilhaService {
 
   /** Gera a proposta (sem gravar etapas): o Gerador de trilhas, ou o exemplo no provider mock. */
   async gerarComIa(user: AuthUser, formacaoId: string, dto: GerarTrilhaIaDto): Promise<PropostaTrilhaIa> {
-    await this.formacaoExiste(user.tenantId, formacaoId);
+    await this.formacaoExiste(user, formacaoId);
     const db = forTenant(user.tenantId);
     // Filtro explicito alem do RLS: a configuracao e a deste municipio.
     const config = await db.tenantConfig.findFirst({ where: { tenantId: user.tenantId } });
@@ -322,7 +326,7 @@ export class TrilhaService {
 
   /** Grava na trilha as etapas escolhidas da proposta: a decisao humana (RIA-002). */
   async salvarDaIa(user: AuthUser, formacaoId: string, interacaoId: string, dto: SalvarTrilhaIaDto): Promise<TrilhaFormacao> {
-    await this.formacaoExiste(user.tenantId, formacaoId);
+    await this.formacaoExiste(user, formacaoId);
     if (!UUID.test(interacaoId)) throw new NotFoundException('Proposta não encontrada.');
     const db = forTenant(user.tenantId);
     const interacao = await db.aiInteracao.findFirst({ where: { id: interacaoId, tenantId: user.tenantId, assistente: GERADOR_TRILHA.id } });
@@ -372,7 +376,7 @@ export class TrilhaService {
   }
 
   async atualizar(user: AuthUser, etapaId: string, dto: AtualizarEtapaTrilhaDto): Promise<TrilhaFormacao> {
-    const e = await this.etapa(user.tenantId, etapaId);
+    const e = await this.etapa(user, etapaId);
     await this.validarModulo(user.tenantId, e.formacaoId, dto.moduloId);
     await forTenant(user.tenantId).trilhaEtapa.update({
       where: { id: etapaId },
@@ -389,7 +393,7 @@ export class TrilhaService {
 
   /** Troca a ordem com a etapa vizinha. */
   async mover(user: AuthUser, etapaId: string, dto: MoverEtapaTrilhaDto): Promise<TrilhaFormacao> {
-    const e = await this.etapa(user.tenantId, etapaId);
+    const e = await this.etapa(user, etapaId);
     const db = forTenant(user.tenantId);
     const subir = dto.direcao === 'subir';
     const vizinha = await db.trilhaEtapa.findFirst({
@@ -405,7 +409,7 @@ export class TrilhaService {
 
   /** Tira a etapa da trilha (o material continua no acervo e na colecao). */
   async remover(user: AuthUser, etapaId: string): Promise<TrilhaFormacao> {
-    const e = await this.etapa(user.tenantId, etapaId);
+    const e = await this.etapa(user, etapaId);
     const db = forTenant(user.tenantId);
     await db.trilhaEtapa.delete({ where: { id: etapaId } });
     const restantes = await db.trilhaEtapa.findMany({ where: { formacaoId: e.formacaoId }, orderBy: { ordem: 'asc' }, select: { id: true, ordem: true } });
@@ -418,7 +422,7 @@ export class TrilhaService {
 
   /** O cursista marca (ou desmarca) uma etapa aprovada como concluida. */
   async concluir(user: AuthUser, etapaId: string, dto: ConcluirEtapaTrilhaDto): Promise<TrilhaFormacao> {
-    const e = await this.etapa(user.tenantId, etapaId);
+    const e = await this.etapa(user, etapaId);
     if (e.material?.status !== 'APROVADO') throw new NotFoundException('Etapa não encontrada.');
     const db = forTenant(user.tenantId);
     const inscricao = await db.inscricao.findFirst({

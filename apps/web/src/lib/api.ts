@@ -108,3 +108,10 @@ export async function login(email: string, senha: string, tenantSlug?: string): 
   setSession(result.accessToken, result.user);
   return result;
 }
+
+/** Cadastro de formador pelo link da curadoria: cria a conta e ja entra logado. */
+export async function cadastrarFormador(token: string, dados: { nome: string; email: string; senha: string }): Promise<LoginResult> {
+  const result = await api.post<LoginResult>(`/convites/publico/${encodeURIComponent(token)}/cadastro`, dados);
+  setSession(result.accessToken, result.user);
+  return result;
+}

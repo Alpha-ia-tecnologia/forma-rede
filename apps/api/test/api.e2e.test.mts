@@ -52,6 +52,7 @@ before(async () => {
   const senhaHash = await bcrypt.hash(senha, 10);
   const pessoas = [
     ['gestora', 'Gestora E2E', 'ADMIN_REDE'],
+    ['curadora', 'Curadora E2E', 'CURADOR'],
     ['formador', 'Formador E2E', 'FORMADOR'],
     ['prof1', 'Ana Professora E2E', 'PROFESSOR'],
     ['prof2', 'Bruno Professor E2E', 'PROFESSOR'],
@@ -89,7 +90,7 @@ after(async () => {
 });
 
 test('login: cada papel entra no proprio municipio', async () => {
-  for (const papel of ['gestora', 'formador', 'prof1', 'prof2']) {
+  for (const papel of ['gestora', 'curadora', 'formador', 'prof1', 'prof2']) {
     const d = ok(await api('POST', '/auth/login', { body: { email: email(papel), senha } }), `login ${papel}`);
     s.token[papel] = d.accessToken;
     const me = ok(await api('GET', '/auth/me', { token: d.accessToken }), `me ${papel}`);
@@ -118,6 +119,45 @@ test('gestao cria formacao, modulo e turma', async () => {
   s.formacaoId = f.id;
   ok(await api('POST', `/formacoes/${f.id}/modulos`, { token: s.token.gestora, body: { titulo: 'Modulo 1', ordem: 1 } }), 'criar modulo');
   s.turmaId = ok(await api('POST', `/formacoes/${f.id}/turmas`, { token: s.token.gestora, body: { nome: 'Turma E2E', vagas: 2 } }), 'criar turma').id;
+});
+
+test('alocacao: sem turma o formador nao ve a formacao; alocado, ve so a turma dele', async () => {
+  assert.deepEqual(ok(await api('GET', '/formacoes', { token: s.token.formador }), 'formacoes sem turma'), []);
+  status(await api('GET', `/formacoes/${s.formacaoId}`, { token: s.token.formador }), 404, 'detalhe sem turma');
+  assert.equal(ok(await api('GET', '/painel/conducao', { token: s.token.formador }), 'painel sem turma').semTurmas, true);
+
+  // A curadoria cria a turma B ja com quem conduz; a turma A recebe o formador depois.
+  s.turmaB = ok(await api('POST', `/formacoes/${s.formacaoId}/turmas`, {
+    token: s.token.curadora, body: { nome: 'Turma B E2E', vagas: 5, formadorIds: [s.usuarios.formador.id] },
+  }), 'turma B com formador').id;
+  status(await api('POST', `/formacoes/${s.formacaoId}/turmas`, {
+    token: s.token.curadora, body: { nome: 'Turma com professor', formadorIds: [s.usuarios.prof1.id] },
+  }), 400, 'alocar quem nao e formador');
+  const rota = `/turmas/${s.turmaId}/formadores`;
+  status(await api('PUT', rota, { token: s.token.formador, body: { formadorIds: [s.usuarios.formador.id] } }), 403, 'formador se aloca');
+  status(await api('PUT', rota, { token: s.token.curadora, body: { formadorIds: [s.usuarios.prof2.id] } }), 400, 'alocar professor');
+  const alocados = ok(await api('PUT', rota, { token: s.token.curadora, body: { formadorIds: [s.usuarios.formador.id] } }), 'alocar na turma A');
+  assert.deepEqual(alocados.map((x: { nome: string }) => x.nome), ['Formador E2E']);
+
+  // Pelo formador: fica so na turma A (sai da B).
+  const f = ok(await api('PUT', `/formadores/${s.usuarios.formador.id}/turmas`, { token: s.token.curadora, body: { turmaIds: [s.turmaId] } }), 'turmas do formador');
+  assert.deepEqual(f.turmas.map((t: { id: string }) => t.id), [s.turmaId]);
+  const lista = ok(await api('GET', '/formadores', { token: s.token.curadora }), 'formadores');
+  assert.deepEqual(lista.map((x: { nome: string }) => x.nome), ['Formador E2E']);
+  const turmas = ok(await api('GET', '/turmas', { token: s.token.curadora }), 'turmas com formadores');
+  assert.deepEqual(turmas.map((t: { id: string; formadores: unknown[] }) => [t.id, t.formadores.length]), [[s.turmaB, 0], [s.turmaId, 1]], 'sem formador primeiro');
+  status(await api('GET', '/turmas', { token: s.token.formador }), 403, 'formador lista turmas');
+
+  assert.deepEqual(ok(await api('GET', '/formacoes', { token: s.token.formador }), 'formacoes').map((x: { id: string }) => x.id), [s.formacaoId]);
+  const d = ok(await api('GET', `/formacoes/${s.formacaoId}`, { token: s.token.formador }), 'detalhe do formador');
+  assert.deepEqual(d.turmas.map((t: { id: string }) => t.id), [s.turmaId], 'o formador ve so a turma dele');
+  assert.deepEqual(d.turmas[0].formadores.map((x: { nome: string }) => x.nome), ['Formador E2E']);
+  status(await api('POST', '/encontros', {
+    token: s.token.formador, body: { turmaId: s.turmaB, titulo: 'Encontro na turma B', inicio: new Date().toISOString() },
+  }), 404, 'encontro em turma que nao conduz');
+  assert.equal(ok(await api('GET', '/painel/conducao', { token: s.token.formador }), 'painel').semTurmas, false);
+  const gestao = ok(await api('GET', `/formacoes/${s.formacaoId}`, { token: s.token.curadora }), 'detalhe da curadoria');
+  assert.equal(gestao.turmas.length, 2, 'a curadoria ve todas as turmas');
 });
 
 test('isolamento: a gestao nao ve formacoes de outro municipio', async () => {
@@ -220,11 +260,16 @@ test('chamada: lista os inscritos e grava as presencas', async () => {
 test('chamada: so aceita inscritos da turma do encontro', async () => {
   const outraTurma = ok(await api('POST', `/formacoes/${s.formacaoId}/turmas`, { token: s.token.gestora, body: { nome: 'Outra turma', vagas: 0 } }), 'outra turma').id;
   const outroEncontro = ok(await api('POST', '/encontros', {
-    token: s.token.formador, body: { turmaId: outraTurma, titulo: 'Encontro de outra turma', inicio: new Date().toISOString() },
+    token: s.token.gestora, body: { turmaId: outraTurma, titulo: 'Encontro de outra turma', inicio: new Date().toISOString() },
   }), 'encontro de outra turma').id;
   status(await api('POST', `/encontros/${outroEncontro}/frequencia`, {
-    token: s.token.formador, body: { registros: [{ inscricaoId: s.inscricao1, presente: true }] },
+    token: s.token.gestora, body: { registros: [{ inscricaoId: s.inscricao1, presente: true }] },
   }), 400, 'presenca para quem nao e da turma');
+  // O formador nao conduz a outra turma: a chamada dela nao existe para ele.
+  status(await api('GET', `/encontros/${outroEncontro}/chamada`, { token: s.token.formador }), 404, 'chamada de turma que nao conduz');
+  status(await api('POST', `/encontros/${outroEncontro}/frequencia`, {
+    token: s.token.formador, body: { registros: [{ inscricaoId: s.inscricao1, presente: true }] },
+  }), 404, 'registrar em turma que nao conduz');
 });
 
 test('encontros: a chamada parcial mostra quem falta marcar', async () => {
@@ -409,7 +454,87 @@ test('atividade: o formador muda a data de entrega e o professor ve a nova', asy
   assert.equal(auditoria, 2, 'cada mudanca de prazo fica na auditoria');
 });
 
+test('devolutivas: a curadoria orienta, quem conduz responde e o Inicio de cada um cobra a sua vez', async () => {
+  const rota = `/formacoes/${s.formacaoId}/devolutivas`;
+  status(await api('POST', rota, { token: s.token.formador, body: { texto: 'Quem conduz nao escreve devolutiva.' } }), 403, 'formador cria devolutiva');
+  status(await api('GET', rota, { token: s.token.prof1 }), 403, 'professor le devolutivas');
+  status(await api('POST', rota, { token: s.token.curadora, body: { tema: 'TRILHA', texto: 'oi' } }), 400, 'texto curto');
+  const d = ok(await api('POST', rota, {
+    token: s.token.curadora, body: { tema: 'TRILHA', texto: 'Torne a etapa 2 obrigatoria antes do encontro.' },
+  }), 'criar devolutiva')[0];
+  assert.equal(d.tema, 'TRILHA');
+  assert.equal(d.autor, 'Curadora E2E');
+  assert.equal(d.aguarda, 'CONDUCAO', 'a devolutiva nova espera quem conduz');
+
+  const pendentes = async (papel: string) => (ok(await api('GET', '/devolutivas/pendentes', { token: s.token[papel] }), `pendentes ${papel}`)
+    .find((x: { formacao: { id: string } }) => x.formacao.id === s.formacaoId)?.quantidade ?? 0);
+  assert.equal(await pendentes('formador'), 1, 'o Inicio do formador cobra a resposta');
+  assert.equal(await pendentes('curadora'), 0);
+
+  const respondida = ok(await api('POST', `/devolutivas/${d.id}/respostas`, {
+    token: s.token.formador, body: { texto: 'Feito: a etapa 2 ficou obrigatoria.' },
+  }), 'responder').find((x: { id: string }) => x.id === d.id);
+  assert.equal(respondida.aguarda, 'CURADORIA');
+  assert.deepEqual(respondida.respostas.map((r: { autor: string; daCuradoria: boolean }) => [r.autor, r.daCuradoria]), [['Formador E2E', false]]);
+  assert.equal(await pendentes('formador'), 0);
+  assert.equal(await pendentes('curadora'), 1, 'a resposta chega ao Inicio da curadoria');
+
+  const resolucao = `/devolutivas/${d.id}/resolucao`;
+  const resolvida = ok(await api('POST', resolucao, { token: s.token.curadora, body: { resolvida: true } }), 'resolver')
+    .find((x: { id: string }) => x.id === d.id);
+  assert.equal(resolvida.aguarda, null);
+  assert.equal(resolvida.resolvidaPor, 'Curadora E2E');
+  status(await api('POST', resolucao, { token: s.token.formador, body: { resolvida: true } }), 400, 'resolver de novo');
+  status(await api('POST', `/devolutivas/${d.id}/respostas`, { token: s.token.formador, body: { texto: 'Mais uma coisa.' } }), 400, 'responder resolvida');
+  assert.equal(await pendentes('curadora'), 0, 'resolvida sai do Inicio');
+
+  const reaberta = ok(await api('POST', resolucao, { token: s.token.formador, body: { resolvida: false } }), 'reabrir')
+    .find((x: { id: string }) => x.id === d.id);
+  assert.equal(reaberta.aguarda, 'CURADORIA', 'reaberta, a vez continua de quem nao escreveu por ultimo');
+  status(await api('POST', `/devolutivas/${d.id}/respostas`, { token: s.token.prof1, body: { texto: 'Professor responde.' } }), 403, 'professor responde');
+  const auditoria = await runAsSystem((tx: any) => tx.auditLog.count({ where: { tenantId: s.tenantId, entity: 'devolutiva_formacao', entityId: d.id } }));
+  assert.equal(auditoria, 3, 'criar, resolver e reabrir ficam na auditoria');
+});
+
+test('link de cadastro: a curadoria gera, a pessoa se cadastra e ja conduz a turma do link', async () => {
+  status(await api('POST', '/convites', { token: s.token.formador, body: { validadeDias: 7 } }), 403, 'formador gera link');
+  const c = ok(await api('POST', '/convites', { token: s.token.curadora, body: { validadeDias: 7, turmaIds: [s.turmaB] } }), 'gerar link');
+  assert.equal(c.situacao, 'ATIVO');
+  assert.deepEqual(c.turmas.map((t: { id: string }) => t.id), [s.turmaB]);
+  const publico = `/convites/publico/${c.token}`;
+  const v = ok(await api('GET', publico), 'link publico');
+  assert.equal(v.municipio, 'Municipio de Teste E2E');
+  assert.deepEqual(v.turmas.map((t: { nome: string }) => t.nome), ['Turma B E2E']);
+  status(await api('GET', '/convites/publico/nao-existe-este-token-de-cadastro'), 404, 'token inexistente');
+  status(await api('POST', `${publico}/cadastro`, { body: { nome: 'Nova', email: 'invalido', senha: 'curta' } }), 400, 'dados invalidos');
+
+  const cad = ok(await api('POST', `${publico}/cadastro`, {
+    body: { nome: 'Nova Formadora E2E', email: email('novaformadora').toUpperCase(), senha },
+  }), 'cadastro pelo link');
+  assert.equal(cad.user.role, 'FORMADOR');
+  assert.equal(cad.user.email, email('novaformadora'), 'o e-mail fica em minusculas');
+  const d = ok(await api('GET', `/formacoes/${s.formacaoId}`, { token: cad.accessToken }), 'formacao da nova formadora');
+  assert.deepEqual(d.turmas.map((t: { id: string }) => t.id), [s.turmaB], 'ja entra na turma do link');
+
+  status(await api('POST', `${publico}/cadastro`, { body: { nome: 'Outra', email: email('novaformadora'), senha: 'senha-errada-123' } }), 409, 'e-mail existente com outra senha');
+  status(await api('POST', `${publico}/cadastro`, { body: { nome: 'Ana', email: email('prof1'), senha } }), 409, 'professor da rede pelo link');
+
+  const lista = ok(await api('POST', `/convites/${c.id}/desativar`, { token: s.token.curadora }), 'desativar');
+  const desativado = lista.find((x: { id: string }) => x.id === c.id);
+  assert.equal(desativado.situacao, 'DESATIVADO');
+  assert.equal(desativado.cadastros, 1);
+  status(await api('GET', publico), 410, 'link desativado');
+  status(await api('POST', `${publico}/cadastro`, { body: { nome: 'Tarde', email: email('tarde'), senha } }), 410, 'cadastro em link desativado');
+
+  const vencido = ok(await api('POST', '/convites', { token: s.token.curadora, body: { validadeDias: 1 } }), 'link curto');
+  await runAsSystem((tx: any) => tx.conviteFormador.update({ where: { id: vencido.id }, data: { expiraEm: new Date(Date.now() - 1000) } }));
+  status(await api('GET', `/convites/publico/${vencido.token}`), 410, 'link expirado');
+  const formadores = ok(await api('GET', '/formadores', { token: s.token.curadora }), 'formadores');
+  assert.deepEqual(formadores.map((x: { nome: string }) => x.nome), ['Formador E2E', 'Nova Formadora E2E']);
+});
+
 test('paineis: Inicio de quem conduz, painel da rede e acompanhamento respondem', async () => {
+  ok(await api('GET', '/dashboard', { token: s.token.curadora }), 'painel da rede (curadoria)');
   ok(await api('GET', '/painel/conducao', { token: s.token.formador }), 'painel de conducao');
   ok(await api('GET', '/dashboard', { token: s.token.gestora }), 'painel da rede');
   ok(await api('GET', `/formacoes/${s.formacaoId}/acompanhamento`, { token: s.token.gestora }), 'acompanhamento');

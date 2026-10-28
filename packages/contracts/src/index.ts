@@ -24,7 +24,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   SUPERADMIN: 'Superadministrador',
   ADMIN_REDE: 'Administrador da rede',
   COORDENADOR: 'Coordenador pedagógico',
-  CURADOR: 'Curador pedagógico',
+  CURADOR: 'Curadoria',
   FORMADOR: 'Formador',
   PROFESSOR: 'Professor participante',
   GESTOR_ESCOLAR: 'Gestor escolar',
@@ -40,45 +40,53 @@ const LEITURA_BASE: Permission[] = [
   'tenant:read', 'formacao:read', 'turma:read', 'encontro:read', 'material:read',
 ];
 
-/** Matriz de privilegio minimo (Etapas 1+2). */
+/** Gestao da rede: escolas, formacoes, acervo, relatorios, frequencia e configuracao de IA. */
+const GESTAO_REDE: Permission[] = [
+  ...LEITURA_BASE,
+  'tenant:update',
+  'regional:read', 'regional:create', 'regional:update', 'regional:delete',
+  'escola:read', 'escola:create', 'escola:update', 'escola:delete',
+  'user:read', 'user:create', 'user:update',
+  'formacao:create', 'formacao:update', 'formacao:delete', 'formacao:transicao',
+  'turma:create', 'turma:update', 'modulo:create',
+  'encontro:create', 'encontro:update', 'frequencia:registrar',
+  'material:create', 'material:update', 'material:aprovar', 'material:vincular', 'trilha:editar',
+  'atividade:create', 'atividade:update', 'entrega:read', 'entrega:avaliar',
+  'inscricao:read', 'inscricao:create', 'inscricao:gerenciar',
+  'certificado:emitir', 'certificado:read',
+  'avaliacao:create', 'avaliacao:read', 'avaliacao:responder', 'report:export',
+  'ia:usar', 'ia:config', 'ia:auditar',
+  'audit:read', 'report:read', 'frequencia:acompanhar', 'ia:assistente',
+  // Aloca formadores nas turmas e gera o link de cadastro de novos formadores.
+  'formador:alocar', 'formador:convidar',
+];
+
+/** Conducao da formacao: encontros, chamada, trilha, atividades, devolutivas aos professores. */
+const CONDUCAO: Permission[] = [
+  ...LEITURA_BASE, 'escola:read',
+  'encontro:create', 'encontro:update', 'frequencia:registrar', 'frequencia:acompanhar', 'trilha:editar',
+  'atividade:create', 'atividade:update',
+  'entrega:read', 'entrega:avaliar', 'inscricao:read',
+  'avaliacao:create', 'avaliacao:read',
+  'ia:usar', 'ia:assistente',
+  // Le as devolutivas da curadoria sobre a formacao, responde e marca como resolvida.
+  'devolutiva:responder',
+];
+
+/** Matriz de privilegio minimo. */
 export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
   SUPERADMIN: ALL,
-  ADMIN_REDE: [
-    ...LEITURA_BASE,
-    'tenant:update',
-    'regional:read', 'regional:create', 'regional:update', 'regional:delete',
-    'escola:read', 'escola:create', 'escola:update', 'escola:delete',
-    'user:read', 'user:create', 'user:update',
-    'formacao:create', 'formacao:update', 'formacao:delete', 'formacao:transicao',
-    'turma:create', 'turma:update', 'modulo:create',
-    'encontro:create', 'encontro:update', 'frequencia:registrar',
-    'material:create', 'material:update', 'material:aprovar', 'material:vincular', 'trilha:editar',
-    'atividade:create', 'atividade:update', 'entrega:read', 'entrega:avaliar',
-    'inscricao:read', 'inscricao:create', 'inscricao:gerenciar',
-    'certificado:emitir', 'certificado:read',
-    'avaliacao:create', 'avaliacao:read', 'avaliacao:responder', 'report:export',
-    'ia:usar', 'ia:config', 'ia:auditar',
-    'audit:read', 'report:read', 'frequencia:acompanhar', 'ia:assistente',
-  ],
+  // Administrador tecnico da rede: tudo da gestao (a equipe pedagogica usa o perfil Curador).
+  ADMIN_REDE: [...new Set([...GESTAO_REDE, 'devolutiva:criar', 'devolutiva:responder'])],
   COORDENADOR: [
     ...LEITURA_BASE, 'escola:read', 'regional:read',
     'inscricao:read', 'entrega:read', 'report:read', 'certificado:read', 'avaliacao:read',
     'frequencia:acompanhar', 'ia:assistente',
   ],
-  CURADOR: [
-    ...LEITURA_BASE,
-    'formacao:create', 'formacao:update', 'formacao:transicao', 'modulo:create',
-    'material:create', 'material:update', 'material:aprovar', 'material:vincular', 'trilha:editar',
-    'ia:usar', 'ia:assistente',
-  ],
-  FORMADOR: [
-    ...LEITURA_BASE, 'escola:read',
-    'encontro:create', 'encontro:update', 'frequencia:registrar', 'frequencia:acompanhar', 'trilha:editar',
-    'atividade:create', 'atividade:update',
-    'entrega:read', 'entrega:avaliar', 'inscricao:read',
-    'avaliacao:create', 'avaliacao:read',
-    'ia:usar', 'ia:assistente',
-  ],
+  // Curadoria: o perfil acima do formador. Faz tudo que a gestao da rede fazia e tudo que o
+  // formador faz, e da devolutivas a quem conduz cada formacao.
+  CURADOR: [...new Set([...GESTAO_REDE, ...CONDUCAO, 'devolutiva:criar'])],
+  FORMADOR: CONDUCAO,
   PROFESSOR: [
     ...LEITURA_BASE,
     'inscricao:create', 'entrega:create', 'certificado:read', 'participante:area',
@@ -90,6 +98,15 @@ export const PERMISSION_MATRIX: Record<Role, Permission[]> = {
   SUPORTE: ['tenant:read'],
   AUDITOR: ['tenant:read', 'audit:read', 'report:read', 'ia:auditar'],
 };
+
+/**
+ * O formador conduz so as turmas em que a curadoria o alocou: formacoes, Inicio, encontros,
+ * chamada, entregas e frequencia mostram apenas essas. Os demais papeis com acesso veem o
+ * municipio todo (o cursista, a propria participacao).
+ */
+export function conduzSoTurmasAlocadas(role: Role): boolean {
+  return role === 'FORMADOR';
+}
 
 export function hasPermission(role: Role, permission: Permission): boolean {
   const perms = PERMISSION_MATRIX[role] ?? [];
@@ -202,6 +219,8 @@ export type CreateModuloDto = z.infer<typeof createModuloSchema>;
 export const createTurmaSchema = z.object({
   nome: z.string().min(2),
   vagas: z.coerce.number().int().min(0).default(0),
+  /** Formadores que conduzem a turma desde a criacao (a curadoria pode mudar depois). */
+  formadorIds: z.array(z.string().uuid()).max(20).default([]),
 });
 export type CreateTurmaDto = z.infer<typeof createTurmaSchema>;
 
@@ -932,6 +951,58 @@ export interface TrilhaFormacao {
 }
 
 // ---------------------------------------------------------------------------
+// Devolutivas da curadoria para quem conduz a formacao (com respostas)
+// ---------------------------------------------------------------------------
+
+export const TEMAS_DEVOLUTIVA = ['GERAL', 'PLANO', 'TRILHA', 'ATIVIDADES', 'ENCONTROS'] as const;
+export type TemaDevolutiva = (typeof TEMAS_DEVOLUTIVA)[number];
+export const TEMA_DEVOLUTIVA_LABELS: Record<TemaDevolutiva, string> = {
+  GERAL: 'Geral', PLANO: 'Plano formativo', TRILHA: 'Trilha', ATIVIDADES: 'Atividades', ENCONTROS: 'Encontros',
+};
+
+export const criarDevolutivaSchema = z.object({
+  tema: z.enum(TEMAS_DEVOLUTIVA).default('GERAL'),
+  texto: z.string().trim().min(5, 'Escreva a devolutiva para quem conduz.').max(3000, 'Use até 3.000 caracteres.'),
+});
+export type CriarDevolutivaDto = z.infer<typeof criarDevolutivaSchema>;
+
+export const responderDevolutivaSchema = z.object({
+  texto: z.string().trim().min(2, 'Escreva a resposta.').max(3000, 'Use até 3.000 caracteres.'),
+});
+export type ResponderDevolutivaDto = z.infer<typeof responderDevolutivaSchema>;
+
+export const resolverDevolutivaSchema = z.object({ resolvida: z.boolean() });
+export type ResolverDevolutivaDto = z.infer<typeof resolverDevolutivaSchema>;
+
+export interface MensagemDevolutiva {
+  id: string;
+  texto: string;
+  autor: string | null;
+  /** Escrita pela curadoria (quem pode criar devolutivas) ou por quem conduz. */
+  daCuradoria: boolean;
+  criadaEm: string;
+}
+
+export interface DevolutivaFormacao {
+  id: string;
+  tema: TemaDevolutiva;
+  texto: string;
+  autor: string | null;
+  criadaEm: string;
+  resolvidaEm: string | null;
+  resolvidaPor: string | null;
+  respostas: MensagemDevolutiva[];
+  /** De quem e a vez: quem conduz (a ultima mensagem e da curadoria) ou a curadoria; null se resolvida. */
+  aguarda: 'CONDUCAO' | 'CURADORIA' | null;
+}
+
+/** Devolutivas esperando quem pergunta (por formacao), para o Inicio. */
+export interface DevolutivasPendentes {
+  formacao: { id: string; titulo: string };
+  quantidade: number;
+}
+
+// ---------------------------------------------------------------------------
 // Pagina da formacao: a participacao do cursista e o acompanhamento de quem conduz
 // ---------------------------------------------------------------------------
 
@@ -1047,6 +1118,8 @@ export interface PainelConducao {
   entregas: { atividadeId: string; titulo: string; formacao: FormacaoRef; aguardando: number }[] | null;
   /** Etapas da trilha cujo material aguarda curadoria, por formacao. */
   curadoria: { formacao: FormacaoRef; etapas: number }[] | null;
+  /** Formador sem nenhuma turma alocada: ainda nao ha o que conduzir (null: ve o municipio todo). */
+  semTurmas: boolean | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1140,3 +1213,77 @@ export function chamadaPendente(
   if (e.cancelado || new Date(e.inicio).getTime() > agora.getTime()) return false;
   return !e.chamadaRegistrada || (e.semMarca ?? 0) > 0;
 }
+
+// ---------------------------------------------------------------------------
+// Formadores: alocacao nas turmas e link de cadastro
+// ---------------------------------------------------------------------------
+
+export interface TurmaRef { id: string; nome: string; formacao: FormacaoRef }
+
+/** GET /formadores: quem tem o papel de formador no municipio e as turmas de cada um. */
+export interface FormadorRede {
+  id: string;
+  nome: string;
+  email: string;
+  /** Inicio do vinculo com o municipio. */
+  desde: string;
+  turmas: TurmaRef[];
+}
+
+/** GET /turmas: cada turma do municipio com quem a conduz (para alocar). */
+export interface TurmaAlocacao extends TurmaRef {
+  /** Formacao encerrada: a turma fica fora das pendencias de alocacao. */
+  encerrada: boolean;
+  inscritos: number;
+  formadores: { id: string; nome: string }[];
+}
+
+/** PUT /turmas/:id/formadores: a lista completa de quem conduz a turma. */
+export const alocarFormadoresSchema = z.object({
+  formadorIds: z.array(z.string().uuid()).max(20, 'Até 20 formadores por turma.'),
+});
+export type AlocarFormadoresDto = z.infer<typeof alocarFormadoresSchema>;
+
+/** PUT /formadores/:id/turmas: todas as turmas que o formador conduz. */
+export const turmasDoFormadorSchema = z.object({
+  turmaIds: z.array(z.string().uuid()).max(50, 'Até 50 turmas por formador.'),
+});
+export type TurmasDoFormadorDto = z.infer<typeof turmasDoFormadorSchema>;
+
+export const VALIDADES_CONVITE = [1, 3, 7, 15, 30] as const;
+export const criarConviteSchema = z.object({
+  validadeDias: z.coerce.number().int().min(1).max(30).default(7),
+  /** Quem se cadastrar ja entra nestas turmas (opcional). */
+  turmaIds: z.array(z.string().uuid()).max(20).default([]),
+});
+export type CriarConviteDto = z.infer<typeof criarConviteSchema>;
+
+export type SituacaoConvite = 'ATIVO' | 'EXPIRADO' | 'DESATIVADO';
+
+/** GET /convites: links de cadastro de formador do municipio. */
+export interface ConviteFormador {
+  id: string;
+  /** Parte final do link (/cadastro/formador/<token>). */
+  token: string;
+  criadoEm: string;
+  criadoPor: string | null;
+  expiraEm: string;
+  desativadoEm: string | null;
+  situacao: SituacaoConvite;
+  cadastros: number;
+  turmas: TurmaRef[];
+}
+
+/** GET /convites/publico/:token: o que a pessoa ve antes de se cadastrar. */
+export interface ConvitePublico {
+  municipio: string;
+  expiraEm: string;
+  turmas: TurmaRef[];
+}
+
+export const cadastroFormadorSchema = z.object({
+  nome: z.string().trim().min(3, 'Informe o nome completo.').max(120, 'Use até 120 caracteres.'),
+  email: z.string().trim().toLowerCase().email('Informe um e-mail válido.'),
+  senha: z.string().min(8, 'A senha deve ter ao menos 8 caracteres.').max(128, 'Use até 128 caracteres.'),
+});
+export type CadastroFormadorDto = z.infer<typeof cadastroFormadorSchema>;

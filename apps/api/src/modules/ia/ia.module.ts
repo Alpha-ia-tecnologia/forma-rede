@@ -3,6 +3,7 @@
 // 2. usuario revisa: aprova, edita ou rejeita (RIA-002); nada e publicado antes
 // 3. respostas incorretas podem ser sinalizadas (RIA-010)
 // 4. admin controla habilitacao e provider por municipio (RIA-005/013)
+// O formador usa o Copiloto so nas formacoes em que foi alocado (common/escopo).
 import {
   BadRequestException,
   Body,
@@ -34,6 +35,7 @@ import {
 import { CurrentUser, RequirePermissions, Roles } from '../../common/security';
 import { ZodValidationPipe } from '../../common/http';
 import { AuditService } from '../../audit/audit.module';
+import { exigirFormacao } from '../../common/escopo';
 
 @Injectable()
 export class IaService {
@@ -121,13 +123,15 @@ export class IaService {
   }
 
   /** RIA-002: aprovar publica o plano; editar substitui a saida; rejeitar descarta. */
-  async decidir(tenantId: string, userId: string, interacaoId: string, dto: DecisaoIaDto) {
+  async decidir(user: AuthUser, interacaoId: string, dto: DecisaoIaDto) {
+    const { tenantId, id: userId } = user;
     const db = forTenant(tenantId);
     const interacao = await db.aiInteracao.findFirst({
       where: { id: interacaoId },
       include: { plano: true },
     });
     if (!interacao) throw new NotFoundException('Interacao nao encontrada.');
+    if (interacao.plano) await exigirFormacao(user, interacao.plano.formacaoId, 'Interacao nao encontrada.');
     if (interacao.status !== 'GERADA') {
       throw new BadRequestException('Esta interacao ja recebeu uma decisao.');
     }
@@ -259,17 +263,19 @@ export class IaController {
 
   @Post('formacoes/:formacaoId/plano')
   @RequirePermissions('ia:usar')
-  gerarPlano(
+  async gerarPlano(
     @CurrentUser() user: AuthUser,
     @Param('formacaoId') formacaoId: string,
     @Body(new ZodValidationPipe(gerarPlanoSchema)) dto: GerarPlanoDto,
   ) {
+    await exigirFormacao(user, formacaoId);
     return this.svc.gerarPlano(user.tenantId, user.id, formacaoId, dto);
   }
 
   @Get('formacoes/:formacaoId/planos')
   @RequirePermissions('ia:usar')
-  planos(@CurrentUser() user: AuthUser, @Param('formacaoId') formacaoId: string) {
+  async planos(@CurrentUser() user: AuthUser, @Param('formacaoId') formacaoId: string) {
+    await exigirFormacao(user, formacaoId);
     return this.svc.planosAprovados(user.tenantId, formacaoId);
   }
 
@@ -280,7 +286,7 @@ export class IaController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(decisaoIaSchema)) dto: DecisaoIaDto,
   ) {
-    return this.svc.decidir(user.tenantId, user.id, id, dto);
+    return this.svc.decidir(user, id, dto);
   }
 
   @Post('interacoes/:id/sinalizar')

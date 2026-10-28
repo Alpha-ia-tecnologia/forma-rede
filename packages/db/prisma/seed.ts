@@ -1,6 +1,6 @@
 // Seed Etapas 1+2: superadmin + municipio demo (Sao Paulo) com rede completa
-// de demonstracao: escolas, formacao com modulo/turma/encontro, professor
-// inscrito, material aprovado e atividade com prazo.
+// de demonstracao: escolas, formacao com modulo/turma/encontro, formador alocado na
+// turma, professor inscrito, material aprovado e atividade com prazo.
 // Senha padrao de todos os usuarios demo: Formarede@2026
 import bcrypt from 'bcryptjs';
 import {
@@ -22,6 +22,8 @@ async function main() {
 
   const superadmin = await mkUser('super@formarede.gov.br', 'Super Administrador');
   const admin = await mkUser('admin.sp@formarede.gov.br', 'Ana Gestora (Rede SP)');
+  // Curadoria: o perfil acima do formador (acervo, trilhas, planos e devolutivas aos formadores).
+  const curador = await mkUser('curador.sp@formarede.gov.br', 'Bianca Curadora');
   const formador = await mkUser('formador.sp@formarede.gov.br', 'Carlos Formador');
   const professor = await mkUser('prof.sp@formarede.gov.br', 'Paula Professora');
 
@@ -70,6 +72,7 @@ async function main() {
       data: [
         { tenantId: tenant.id, userId: superadmin.id, role: RoleType.SUPERADMIN },
         { tenantId: tenant.id, userId: admin.id, role: RoleType.ADMIN_REDE },
+        { tenantId: tenant.id, userId: curador.id, role: RoleType.CURADOR },
         { tenantId: tenant.id, userId: formador.id, role: RoleType.FORMADOR },
         { tenantId: tenant.id, userId: professor.id, role: RoleType.PROFESSOR },
       ],
@@ -99,8 +102,12 @@ async function main() {
       },
     });
 
+    // A curadoria aloca o formador na turma: e ela que ele conduz (e so ela ele ve).
     const turma = await tx.turma.create({
-      data: { tenantId: tenant.id, formacaoId: formacao.id, nome: 'Turma 2026.1', vagas: 30 },
+      data: {
+        tenantId: tenant.id, formacaoId: formacao.id, nome: 'Turma 2026.1', vagas: 30,
+        formadores: { create: { tenantId: tenant.id, userId: formador.id, alocadoPorId: curador.id } },
+      },
     });
 
     const encontro = await tx.encontro.create({
@@ -184,6 +191,7 @@ async function main() {
   console.log('Seed concluido.');
   console.log('  Superadmin : super@formarede.gov.br');
   console.log('  Admin rede : admin.sp@formarede.gov.br');
+  console.log('  Curadoria  : curador.sp@formarede.gov.br');
   console.log('  Formador   : formador.sp@formarede.gov.br');
   console.log('  Professor  : prof.sp@formarede.gov.br');
   console.log('  Senha      : Formarede@2026');

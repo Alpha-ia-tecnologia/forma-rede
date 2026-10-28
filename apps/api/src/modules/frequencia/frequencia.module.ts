@@ -2,7 +2,8 @@
 // projecao para a certificacao, ausencias seguidas e chamadas pendentes, por
 // formacao, turma e escola. A regra de calculo vem de @formarede/contracts
 // (resumirFrequencia), a mesma usada pelo modo demonstracao do web.
-// Escopo: a gestao escolar ve so os professores das proprias escolas.
+// Escopo: a gestao escolar ve so os professores das proprias escolas; o formador, so os
+// das turmas em que foi alocado (common/escopo).
 import { Controller, Get, Injectable, Module, Query } from '@nestjs/common';
 import { forTenant } from '@formarede/db';
 import {
@@ -15,6 +16,7 @@ import {
   resumirFrequencia,
 } from '@formarede/contracts';
 import { CurrentUser, RequirePermissions } from '../../common/security';
+import { escopoConducao, naTurma } from '../../common/escopo';
 
 export interface FiltrosFrequencia {
   formacaoId?: string;
@@ -26,8 +28,9 @@ export interface FiltrosFrequencia {
 export class FrequenciaService {
   async professores(user: AuthUser, filtros: FiltrosFrequencia, agora = new Date()): Promise<AcompanhamentoFrequencia> {
     const db = forTenant(user.tenantId);
+    const conducao = await escopoConducao(user);
     const inscricoes = await db.inscricao.findMany({
-      where: { status: { in: ['CONFIRMADA', 'CONCLUIDA'] } },
+      where: { status: { in: ['CONFIRMADA', 'CONCLUIDA'] }, turmaId: naTurma(conducao) },
       include: {
         user: { select: { id: true, nome: true, email: true } },
         turma: {

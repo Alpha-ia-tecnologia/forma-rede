@@ -1,6 +1,7 @@
 // Avaliacoes (RF-100..105): questionarios com escalas de percepcao (1-5) e
 // perguntas discursivas. Feedback anonimo quando configurado (RF-104):
-// a resposta nao referencia a inscricao. Resultados sempre agregados.
+// a resposta nao referencia a inscricao. Resultados sempre agregados (por formacao).
+// O formador ve e cria so nas formacoes em que foi alocado (common/escopo).
 import {
   BadRequestException,
   Body,
@@ -26,6 +27,7 @@ import {
 } from '@formarede/contracts';
 import { CurrentUser, RequirePermissions } from '../../common/security';
 import { ZodValidationPipe } from '../../common/http';
+import { escopoConducao, exigirFormacao } from '../../common/escopo';
 
 type RespostaItem = { perguntaId: string; valor?: number; texto?: string };
 const tem = (u: AuthUser, p: string) => u.permissions.includes('*') || u.permissions.includes(p);
@@ -33,7 +35,7 @@ const tem = (u: AuthUser, p: string) => u.permissions.includes('*') || u.permiss
 @Injectable()
 export class AvaliacoesService {
   /**
-   * Quem conduz ve todas as avaliacoes. O cursista ve so as das formacoes em que esta
+   * Quem conduz ve as avaliacoes das formacoes que conduz (o formador, as dele). O cursista ve so as das formacoes em que esta
    * inscrito, com `respondida` (a identificada pela resposta; a anonima pela participacao,
    * que nao guarda o conteudo).
    */
@@ -47,10 +49,12 @@ export class AvaliacoesService {
       })
       : [];
     const minhas = inscricoes.map((i) => i.turma.formacaoId);
+    const conducao = await escopoConducao(user);
     const respondidas = new Set(inscricoes.flatMap((i) => [...i.respostas, ...i.participacoesAval].map((r) => r.avaliacaoId)));
     const lista = await db.avaliacao.findMany({
       where: {
         ...(formacaoId ? { formacaoId } : {}),
+        ...(conducao ? { formacaoId: { in: formacaoId ? conducao.formacoes.filter((f) => f === formacaoId) : conducao.formacoes } } : {}),
         ...(cursista ? { formacaoId: { in: formacaoId ? minhas.filter((f) => f === formacaoId) : minhas } } : {}),
       },
       orderBy: { createdAt: 'desc' },
@@ -62,16 +66,19 @@ export class AvaliacoesService {
     return lista.map((a) => ({ ...a, respondida: cursista ? respondidas.has(a.id) : null }));
   }
 
-  async detail(tenantId: string, id: string) {
-    const avaliacao = await forTenant(tenantId).avaliacao.findFirst({
+  async detail(user: AuthUser, id: string) {
+    const avaliacao = await forTenant(user.tenantId).avaliacao.findFirst({
       where: { id },
       include: { formacao: { select: { id: true, titulo: true } } },
     });
     if (!avaliacao) throw new NotFoundException('Avaliacao nao encontrada.');
+    await exigirFormacao(user, avaliacao.formacaoId, 'Avaliacao nao encontrada.');
     return avaliacao;
   }
 
-  create(tenantId: string, formacaoId: string, dto: CreateAvaliacaoDto) {
+  async create(user: AuthUser, formacaoId: string, dto: CreateAvaliacaoDto) {
+    const tenantId = user.tenantId;
+    await exigirFormacao(user, formacaoId);
     let n = 0;
     const perguntas: PerguntaAvaliacao[] = [
       ...dto.escalas.map((texto) => ({ id: `p${++n}`, tipo: 'ESCALA' as const, texto })),
@@ -127,10 +134,11 @@ export class AvaliacoesService {
   }
 
   /** Resultados agregados: media por escala, lista de textos (sem autoria). */
-  async resultados(tenantId: string, id: string) {
-    const db = forTenant(tenantId);
+  async resultados(user: AuthUser, id: string) {
+    const db = forTenant(user.tenantId);
     const avaliacao = await db.avaliacao.findFirst({ where: { id }, include: { formacao: { select: { id: true, titulo: true } } } });
     if (!avaliacao) throw new NotFoundException('Avaliacao nao encontrada.');
+    await exigirFormacao(user, avaliacao.formacaoId, 'Avaliacao nao encontrada.');
     // Taxa de resposta: quantos cursistas da formacao poderiam responder.
     const cursistas = await db.inscricao.count({
       where: { status: { in: ['CONFIRMADA', 'CONCLUIDA'] }, turma: { formacaoId: avaliacao.formacaoId } },
@@ -177,7 +185,7 @@ export class AvaliacoesController {
 
   @Get('avaliacoes/:id')
   detail(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.svc.detail(user.tenantId, id);
+    return this.svc.detail(user, id);
   }
 
   @Post('formacoes/:formacaoId/avaliacoes')
@@ -187,7 +195,7 @@ export class AvaliacoesController {
     @Param('formacaoId') formacaoId: string,
     @Body(new ZodValidationPipe(createAvaliacaoSchema)) dto: CreateAvaliacaoDto,
   ) {
-    return this.svc.create(user.tenantId, formacaoId, dto);
+    return this.svc.create(user, formacaoId, dto);
   }
 
   @Post('avaliacoes/:id/respostas')
@@ -203,7 +211,7 @@ export class AvaliacoesController {
   @Get('avaliacoes/:id/resultados')
   @RequirePermissions('avaliacao:read')
   resultados(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.svc.resultados(user.tenantId, id);
+    return this.svc.resultados(user, id);
   }
 }
 

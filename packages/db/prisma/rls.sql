@@ -27,7 +27,8 @@ DECLARE
     'material','material_formacao','atividade','entrega','certificado',
     'avaliacao','resposta_avaliacao','ai_interacao','plano_formativo',
     'audit_log','assistente_conversa','assistente_turno',
-    'trilha_etapa','trilha_progresso','avaliacao_participacao'
+    'trilha_etapa','trilha_progresso','avaliacao_participacao',
+    'devolutiva_formacao','devolutiva_resposta','turma_formador','convite_formador'
   ];
 BEGIN
   FOREACH t IN ARRAY tables LOOP

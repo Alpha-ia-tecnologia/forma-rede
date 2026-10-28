@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ETAPA_FLUXO_LABELS } from '@formarede/contracts';
+import { conduzSoTurmasAlocadas, ETAPA_FLUXO_LABELS } from '@formarede/contracts';
 import type { EtapaFluxo } from '@formarede/contracts';
 import { api, getUser } from '../../../lib/api';
 import { etapaParaCursista, plural } from '../../../lib/texto';
@@ -20,6 +20,8 @@ export default function FormacoesPage() {
   const podeCriar = !!user && (user.permissions.includes('*') || user.permissions.includes('formacao:create'));
   // O cursista chega aqui para conhecer outras formacoes da rede (nao para gerir).
   const cursista = !!user && user.permissions.includes('participante:area') && !user.permissions.includes('formacao:update') && !user.permissions.includes('trilha:editar');
+  // O formador ve so as formacoes das turmas em que foi alocado.
+  const soAlocadas = !!user && conduzSoTurmasAlocadas(user.role);
 
   function carregar() {
     api.get<FormacaoRow[]>('/formacoes').then(setRows)
@@ -82,8 +84,10 @@ export default function FormacoesPage() {
       ) : rows.length === 0 ? (
         <EmptyState
           icon={<><path d="M6 4h12v16H8a2 2 0 0 1-2-2V4Z" /><path d="M10 8h5" /></>}
-          titulo="Nenhuma formação criada ainda"
-          descricao="Crie a primeira: depois você abre a turma, agenda os encontros e monta a trilha."
+          titulo={soAlocadas ? 'Você ainda não está em nenhuma turma' : 'Nenhuma formação criada ainda'}
+          descricao={soAlocadas
+            ? 'A curadoria aloca você nas turmas que vai conduzir; as formações delas aparecem aqui.'
+            : 'Crie a primeira: depois você abre a turma, agenda os encontros e monta a trilha.'}
           acao={podeCriar && <Link href="/formacoes/nova" className="btn btn-primary">Criar formação</Link>}
         />
       ) : (

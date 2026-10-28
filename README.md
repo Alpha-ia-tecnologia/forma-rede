@@ -66,8 +66,25 @@ pnpm dev
 
 | Perfil | E-mail | Senha |
 |--------|--------|-------|
-| Administrador da rede | admin.sp@formarede.gov.br | Formarede@2026 |
+| Curadoria (acima do formador; tudo o que a gestão fazia) | curador.sp@formarede.gov.br | Formarede@2026 |
+| Formador | formador.sp@formarede.gov.br | Formarede@2026 |
+| Professor | prof.sp@formarede.gov.br | Formarede@2026 |
+| Administrador da rede (legado, fora da tela de login) | admin.sp@formarede.gov.br | Formarede@2026 |
 | Superadministrador | super@formarede.gov.br | Formarede@2026 |
+
+**Papéis.** A curadoria (`CURADOR`) é a equipe que direciona materiais, sugere trilhas e dá
+devolutivas a quem conduz: tem tudo o que a gestão da rede tinha (formações, acervo, escolas,
+relatórios, configuração da IA), edita direto plano, trilha e materiais, e escreve as devolutivas
+(`devolutiva:criar`). O formador conduz e responde (`devolutiva:responder`).
+
+**Formadores nas turmas.** A curadoria e o superadmin criam as formações e alocam cada formador
+nas turmas que ele conduz (`formador:alocar`): ao abrir a turma, na nova formação, na página da
+formação ("Turmas e formadores") ou na tela Formadores. O formador vê e age só nessas turmas
+(`conduzSoTurmasAlocadas` no contracts; recorte em `apps/api/src/common/escopo.ts`): formações,
+Início, encontros, chamada, entregas, frequência, trilha, pesquisas, Copiloto, Assistente e
+devolutivas. Fora delas, a API responde 404. Novos formadores entram por um **link de cadastro**
+(`formador:convidar`): compartilhável, vale de 1 a 30 dias, pode ser desativado e, se tiver turmas,
+já aloca quem se cadastrar. A página pública é `/cadastro/formador/<token>`.
 
 ## Isolamento multi-tenant (RLS)
 
@@ -191,6 +208,17 @@ Novos usuarios demo: `formador.sp@formarede.gov.br` e `prof.sp@formarede.gov.br`
 | POST | `/atividades/:id/entrega` | professor envia/reenvia |
 | GET | `/atividades/:id/entregas` | formador lista |
 | POST | `/entregas/:id/avaliacao` | devolutiva (nota/feedback/ajuste) |
+| GET/POST | `/formacoes/:id/devolutivas` | devolutivas da curadoria para quem conduz (ler: `devolutiva:responder`; escrever: `devolutiva:criar`), com tema (geral, plano, trilha, atividades, encontros) |
+| POST | `/devolutivas/:id/respostas` | resposta de quem conduz ou da curadoria (devolutiva resolvida recusa: reabra antes) |
+| POST | `/devolutivas/:id/resolucao` | `{resolvida}` marca como resolvida ou reabre; fica na auditoria |
+| GET | `/devolutivas/pendentes` | por formação em andamento, as que esperam o usuário (quem conduz: devolutivas sem resposta; curadoria: respostas a ler) |
+| GET | `/formadores` | formador:alocar — formadores do município e as turmas de cada um |
+| GET | `/turmas` | formador:alocar — todas as turmas com quem conduz (sem formador primeiro) |
+| PUT | `/turmas/:id/formadores` · `/formadores/:id/turmas` | formador:alocar — troca quem conduz a turma / as turmas do formador (só perfis FORMADOR do município); fica na auditoria |
+| POST | `/formacoes/:id/turmas` | aceita `formadorIds` para abrir a turma já com quem conduz |
+| GET/POST | `/convites` · POST `/convites/:id/desativar` | formador:convidar — links de cadastro (`validadeDias` 1–30, `turmaIds` opcionais) |
+| GET | `/convites/publico/:token` | **publico** — município, validade e turmas do link (404 inexistente, 410 expirado/desativado) |
+| POST | `/convites/publico/:token/cadastro` | **publico** — cria a conta FORMADOR (ou vincula um e-mail existente com a senha dele), aloca nas turmas do link e devolve a sessão; 10/min por IP |
 | POST | `/inscricoes` | inscricao em turma (valida vagas) |
 | GET | `/participante/minhas-formacoes` | area do professor com progresso |
 | POST | `/inscricoes/:id/certificado` | emite se frequencia minima + atividades avaliadas |
@@ -274,11 +302,11 @@ O sistema organiza cada tela pelo que a pessoa vem fazer:
   abre o mesmo painel. As permissões vêm do papel (não da cópia guardada no login).
 - **Início = próxima ação.** Professor: "Para fazer agora" (ajuste pedido, entrega, pesquisa, próxima
   etapa da trilha, certificado liberado), próximo encontro e as próprias formações. Quem conduz:
-  "O que precisa de você" (chamada de hoje e pendentes, entregas por atividade, etapas em curadoria)
-  e os próximos encontros. Cada item leva ao ponto exato (`/encontros/:id/chamada`,
-  `/formacoes/:id?avaliar=<atividade>#atividade-…`, `#trilha`). Gestão da rede (`report:read`): "O que
-  depende de você" (materiais para revisar, formação esperando a decisão de encerrar, professores abaixo do
-  mínimo, chamadas pendentes) e depois "Como está a rede", com a frequência da mesma conta da tela de Frequência.
+  "O que precisa de você" (chamada de hoje e pendentes, entregas por atividade, devolutivas da curadoria
+  sem resposta, etapas em curadoria) e os próximos encontros. Cada item leva ao ponto exato
+  (`/encontros/:id/chamada`, `/formacoes/:id?avaliar=<atividade>#atividade-…`, `#trilha`, `#devolutivas`).
+  Curadoria (`report:read`): "O que depende de você" (materiais para revisar, respostas às devolutivas,
+  professores abaixo do mínimo, chamadas pendentes) e depois "Como está a rede", com a frequência da mesma conta da tela de Frequência.
 - **Uma conta só.** Minhas formações, Início e a página da formação usam a mesma participação
   (presenças sobre encontros previstos, atividades avaliadas); o botão do certificado só aparece quando
   liberado. O certificado (`/validar/:codigo`) é o próprio documento: imprimir/salvar em PDF e conferir

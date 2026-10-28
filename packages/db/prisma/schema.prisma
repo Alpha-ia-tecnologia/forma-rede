@@ -134,33 +134,37 @@ model Tenant {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  config            TenantConfig?
-  regionais         Regional[]
-  escolas           Escola[]
-  memberships       Membership[]
-  consents          Consent[]
-  formacoes         Formacao[]
-  turmas            Turma[]
-  modulos           ModuloFormacao[]
-  transicoes        EtapaTransicao[]
-  inscricoes        Inscricao[]
-  encontros         Encontro[]
-  frequencias       Frequencia[]
-  materiais         Material[]
-  materiaisFormacao MaterialFormacao[]
-  atividades        Atividade[]
-  entregas          Entrega[]
-  certificados      Certificado[]
-  avaliacoes        Avaliacao[]
-  respostasAval     RespostaAvaliacao[]
-  participacoesAval AvaliacaoParticipacao[]
-  aiInteracoes      AiInteracao[]
-  planosFormativos  PlanoFormativo[]
-  auditLogs         AuditLog[]
+  config              TenantConfig?
+  regionais           Regional[]
+  escolas             Escola[]
+  memberships         Membership[]
+  consents            Consent[]
+  formacoes           Formacao[]
+  turmas              Turma[]
+  modulos             ModuloFormacao[]
+  transicoes          EtapaTransicao[]
+  inscricoes          Inscricao[]
+  encontros           Encontro[]
+  frequencias         Frequencia[]
+  materiais           Material[]
+  materiaisFormacao   MaterialFormacao[]
+  atividades          Atividade[]
+  entregas            Entrega[]
+  certificados        Certificado[]
+  avaliacoes          Avaliacao[]
+  respostasAval       RespostaAvaliacao[]
+  participacoesAval   AvaliacaoParticipacao[]
+  aiInteracoes        AiInteracao[]
+  planosFormativos    PlanoFormativo[]
+  auditLogs           AuditLog[]
   assistenteConversas AssistenteConversa[]
   assistenteTurnos    AssistenteTurno[]
   trilhaEtapas        TrilhaEtapa[]
   trilhaProgressos    TrilhaProgresso[]
+  devolutivas         DevolutivaFormacao[]
+  devolutivaRespostas DevolutivaResposta[]
+  turmaFormadores     TurmaFormador[]
+  convitesFormador    ConviteFormador[]
 
   @@map("tenant")
 }
@@ -236,11 +240,12 @@ model User {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  memberships   Membership[]
-  refreshTokens RefreshToken[]
-  consents      Consent[]
-  inscricoes    Inscricao[]
+  memberships         Membership[]
+  refreshTokens       RefreshToken[]
+  consents            Consent[]
+  inscricoes          Inscricao[]
   assistenteConversas AssistenteConversa[]
+  turmasConduzidas    TurmaFormador[]
 
   @@map("user")
 }
@@ -317,16 +322,17 @@ model Formacao {
   createdAt     DateTime           @default(now()) @map("created_at")
   updatedAt     DateTime           @updatedAt @map("updated_at")
 
-  tenant     Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  turmas     Turma[]
-  modulos    ModuloFormacao[]
-  transicoes EtapaTransicao[]
-  materiais  MaterialFormacao[]
-  atividades Atividade[]
-  avaliacoes Avaliacao[]
-  planos     PlanoFormativo[]
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  turmas              Turma[]
+  modulos             ModuloFormacao[]
+  transicoes          EtapaTransicao[]
+  materiais           MaterialFormacao[]
+  atividades          Atividade[]
+  avaliacoes          Avaliacao[]
+  planos              PlanoFormativo[]
   assistenteConversas AssistenteConversa[]
-  trilha     TrilhaEtapa[]
+  trilha              TrilhaEtapa[]
+  devolutivas         DevolutivaFormacao[]
 
   @@index([tenantId])
   @@index([tenantId, etapaFluxo])
@@ -343,10 +349,11 @@ model Turma {
   fim        DateTime?
   createdAt  DateTime  @default(now()) @map("created_at")
 
-  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  formacao   Formacao    @relation(fields: [formacaoId], references: [id], onDelete: Cascade)
+  tenant     Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  formacao   Formacao        @relation(fields: [formacaoId], references: [id], onDelete: Cascade)
   encontros  Encontro[]
   inscricoes Inscricao[]
+  formadores TurmaFormador[]
 
   @@index([tenantId, formacaoId])
   @@map("turma")
@@ -362,9 +369,9 @@ model ModuloFormacao {
   ordem      Int      @default(1)
   createdAt  DateTime @default(now()) @map("created_at")
 
-  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  formacao  Formacao   @relation(fields: [formacaoId], references: [id], onDelete: Cascade)
-  encontros Encontro[]
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  formacao     Formacao      @relation(fields: [formacaoId], references: [id], onDelete: Cascade)
+  encontros    Encontro[]
   etapasTrilha TrilhaEtapa[]
 
   @@index([tenantId, formacaoId])
@@ -404,15 +411,15 @@ model Inscricao {
   origem    String          @default("individual")
   createdAt DateTime        @default(now()) @map("created_at")
 
-  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  turma       Turma        @relation(fields: [turmaId], references: [id], onDelete: Cascade)
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  frequencias Frequencia[]
-  entregas    Entrega[]
-  certificado Certificado?
-  respostas   RespostaAvaliacao[]
+  tenant            Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  turma             Turma                   @relation(fields: [turmaId], references: [id], onDelete: Cascade)
+  user              User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  frequencias       Frequencia[]
+  entregas          Entrega[]
+  certificado       Certificado?
+  respostas         RespostaAvaliacao[]
   participacoesAval AvaliacaoParticipacao[]
-  progressoTrilha TrilhaProgresso[]
+  progressoTrilha   TrilhaProgresso[]
 
   @@unique([turmaId, userId])
   @@index([tenantId, turmaId])
@@ -468,25 +475,25 @@ model Frequencia {
 // ---------------------------------------------------------------------------
 
 model Material {
-  id        String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId  String         @map("tenant_id") @db.Uuid
-  titulo    String
-  descricao String?
-  tipo      MaterialTipo   @default(DOCUMENTO)
-  url       String?
-  autoria   String?
-  fonte     String?
-  licenca   String?
-  tags      String[]
-  status    MaterialStatus @default(RASCUNHO)
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String         @map("tenant_id") @db.Uuid
+  titulo       String
+  descricao    String?
+  tipo         MaterialTipo   @default(DOCUMENTO)
+  url          String?
+  autoria      String?
+  fonte        String?
+  licenca      String?
+  tags         String[]
+  status       MaterialStatus @default(RASCUNHO)
   /// Por que a curadoria recusou (quem cadastrou ve no acervo).
-  motivoRecusa String?     @map("motivo_recusa")
-  criadoPorId String?      @map("criado_por_id") @db.Uuid
-  createdAt DateTime       @default(now()) @map("created_at")
-  updatedAt DateTime       @updatedAt @map("updated_at")
+  motivoRecusa String?        @map("motivo_recusa")
+  criadoPorId  String?        @map("criado_por_id") @db.Uuid
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
 
-  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  formacoes MaterialFormacao[]
+  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  formacoes    MaterialFormacao[]
   etapasTrilha TrilhaEtapa[]
 
   @@index([tenantId, status])
@@ -624,9 +631,9 @@ model Avaliacao {
   perguntas  Json
   createdAt  DateTime      @default(now()) @map("created_at")
 
-  tenant   Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  formacao Formacao            @relation(fields: [formacaoId], references: [id], onDelete: Cascade)
-  entradas RespostaAvaliacao[]
+  tenant        Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  formacao      Formacao                @relation(fields: [formacaoId], references: [id], onDelete: Cascade)
+  entradas      RespostaAvaliacao[]
   participacoes AvaliacaoParticipacao[]
 
   @@index([tenantId, formacaoId])
@@ -795,23 +802,23 @@ model AssistenteTurno {
 /// Etapa da trilha de uma formacao. Todo recurso e um Material: so os APROVADOS
 /// aparecem para os cursistas (curadoria, RIA-003/006); recurso novo entra EM_REVISAO.
 model TrilhaEtapa {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId    String   @map("tenant_id") @db.Uuid
-  formacaoId  String   @map("formacao_id") @db.Uuid
-  moduloId    String?  @map("modulo_id") @db.Uuid
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String        @map("tenant_id") @db.Uuid
+  formacaoId      String        @map("formacao_id") @db.Uuid
+  moduloId        String?       @map("modulo_id") @db.Uuid
   /// Vazio na etapa que veio de um modelo e ainda nao tem recurso (os cursistas nao a veem).
-  materialId  String?  @map("material_id") @db.Uuid
+  materialId      String?       @map("material_id") @db.Uuid
   /// Tipo de recurso que o modelo previu para a etapa ainda sem material.
-  tipoPrevisto MaterialTipo? @map("tipo_previsto")
+  tipoPrevisto    MaterialTipo? @map("tipo_previsto")
   /// Etapa proposta pela IA ainda sem recurso: o que procurar (texto da IA).
-  recursoSugerido String? @map("recurso_sugerido")
-  ordem       Int
-  titulo      String
-  orientacao  String?
-  duracaoMin  Int?     @map("duracao_min")
-  obrigatoria Boolean  @default(true)
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  recursoSugerido String?       @map("recurso_sugerido")
+  ordem           Int
+  titulo          String
+  orientacao      String?
+  duracaoMin      Int?          @map("duracao_min")
+  obrigatoria     Boolean       @default(true)
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
 
   tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   formacao  Formacao          @relation(fields: [formacaoId], references: [id], onDelete: Cascade)
@@ -838,4 +845,80 @@ model TrilhaProgresso {
   @@unique([etapaId, inscricaoId])
   @@index([tenantId, inscricaoId])
   @@map("trilha_progresso")
+}
+
+/// Devolutiva da curadoria para quem conduz a formacao; o formador responde e marca como resolvida.
+model DevolutivaFormacao {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  formacaoId     String    @map("formacao_id") @db.Uuid
+  autorId        String    @map("autor_id") @db.Uuid
+  /// GERAL, PLANO, TRILHA, ATIVIDADES ou ENCONTROS (TEMAS_DEVOLUTIVA no contracts).
+  tema           String    @default("GERAL")
+  texto          String
+  resolvidaEm    DateTime? @map("resolvida_em")
+  resolvidaPorId String?   @map("resolvida_por_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  tenant    Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  formacao  Formacao             @relation(fields: [formacaoId], references: [id], onDelete: Cascade)
+  respostas DevolutivaResposta[]
+
+  @@index([tenantId, formacaoId, createdAt])
+  @@map("devolutiva_formacao")
+}
+
+/// Resposta numa devolutiva (de quem conduz ou da curadoria), em ordem.
+model DevolutivaResposta {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  devolutivaId String   @map("devolutiva_id") @db.Uuid
+  autorId      String   @map("autor_id") @db.Uuid
+  daCuradoria  Boolean  @default(false) @map("da_curadoria")
+  texto        String
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  tenant     Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  devolutiva DevolutivaFormacao @relation(fields: [devolutivaId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, devolutivaId, createdAt])
+  @@map("devolutiva_resposta")
+}
+
+/// Formador alocado numa turma pela curadoria: o formador conduz so as turmas em que esta.
+model TurmaFormador {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  turmaId      String   @map("turma_id") @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  alocadoPorId String?  @map("alocado_por_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  turma  Turma  @relation(fields: [turmaId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([turmaId, userId])
+  @@index([tenantId, userId])
+  @@map("turma_formador")
+}
+
+/// Link de cadastro de formador: compartilhavel, com validade, desativavel; pode ja alocar em turmas.
+model ConviteFormador {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  /// Parte final do link; aleatoria (32 bytes), consultada sem contexto de municipio.
+  token        String    @unique
+  criadoPorId  String    @map("criado_por_id") @db.Uuid
+  expiraEm     DateTime  @map("expira_em")
+  desativadoEm DateTime? @map("desativado_em")
+  cadastros    Int       @default(0)
+  turmaIds     String[]  @map("turma_ids") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@map("convite_formador")
 }

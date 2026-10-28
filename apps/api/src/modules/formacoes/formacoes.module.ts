@@ -1,6 +1,7 @@
 // Formacoes: CRUD, modulos e turmas (RF-017..034). Ciclo simples: a formacao nasce em
 // andamento e quem a cria a encerra (ou reabre); nao ha aprovacao por etapas, porque quem
 // cria e quem valida. Encerrar e reabrir viram EtapaTransicao (historico) + AuditLog.
+// O formador ve so as formacoes e as turmas em que a curadoria o alocou (common/escopo).
 import {
   BadRequestException,
   Body,
@@ -30,6 +31,7 @@ import {
 import { CurrentUser, RequirePermissions } from '../../common/security';
 import { ZodValidationPipe } from '../../common/http';
 import { AuditService } from '../../audit/audit.module';
+import { escopoConducao, exigirFormacao, exigirFormadores, naFormacao, naTurma } from '../../common/escopo';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const tem = (u: AuthUser, p: string) => u.permissions.includes('*') || u.permissions.includes(p);
@@ -40,19 +42,31 @@ const CONDUZ = ['trilha:editar', 'frequencia:registrar', 'entrega:read', 'inscri
 export class FormacoesService {
   constructor(private readonly audit: AuditService) {}
 
-  list(tenantId: string) {
-    return forTenant(tenantId).formacao.findMany({
+  async list(user: AuthUser) {
+    const escopo = await escopoConducao(user);
+    return forTenant(user.tenantId).formacao.findMany({
+      where: { id: naFormacao(escopo) },
       orderBy: { createdAt: 'desc' },
       include: { _count: { select: { turmas: true, modulos: true, atividades: true } } },
     });
   }
 
-  async detail(tenantId: string, id: string) {
+  async detail(user: AuthUser, id: string) {
+    const tenantId = user.tenantId;
+    if (!UUID.test(id)) throw new NotFoundException('Formacao nao encontrada.');
+    const escopo = await exigirFormacao(user, id, 'Formacao nao encontrada.');
     const formacao = await forTenant(tenantId).formacao.findFirst({
       where: { id },
       include: {
         modulos: { orderBy: { ordem: 'asc' } },
-        turmas: { include: { _count: { select: { inscricoes: true, encontros: true } } } },
+        turmas: {
+          where: { id: naTurma(escopo) },
+          orderBy: { createdAt: 'asc' },
+          include: {
+            _count: { select: { inscricoes: true, encontros: true } },
+            formadores: { orderBy: { createdAt: 'asc' }, select: { user: { select: { id: true, nome: true } } } },
+          },
+        },
         materiais: { include: { material: true } },
         atividades: { orderBy: { createdAt: 'asc' } },
         transicoes: { orderBy: { createdAt: 'desc' } },
@@ -67,6 +81,7 @@ export class FormacoesService {
     const nome = new Map(pessoas.map((p) => [p.id, p.nome]));
     return {
       ...formacao,
+      turmas: formacao.turmas.map(({ formadores, ...t }) => ({ ...t, formadores: formadores.map((x) => x.user) })),
       transicoes: formacao.transicoes.map((t) => ({ ...t, decididoPor: nome.get(t.decididoPorId) ?? null })),
     };
   }
@@ -80,10 +95,12 @@ export class FormacoesService {
       throw new ForbiddenException('Este painel é de quem conduz ou acompanha a formação.');
     }
     if (!UUID.test(id)) throw new NotFoundException('Formacao nao encontrada.');
+    const escopo = await exigirFormacao(user, id, 'Formacao nao encontrada.');
     const f = await forTenant(user.tenantId).formacao.findFirst({
       where: { id },
       include: {
         turmas: {
+          where: { id: naTurma(escopo) },
           orderBy: { createdAt: 'asc' },
           include: {
             _count: { select: { inscricoes: { where: { status: { in: ['CONFIRMADA', 'CONCLUIDA'] } } } } },
@@ -91,7 +108,8 @@ export class FormacoesService {
             encontros: { orderBy: { inicio: 'asc' }, include: { frequencias: { select: { presente: true, inscricaoId: true } } } },
           },
         },
-        atividades: { orderBy: { createdAt: 'asc' }, include: { entregas: { select: { status: true } } } },
+        // As entregas contadas sao as das turmas de quem abre (o formador, as dele).
+        atividades: { orderBy: { createdAt: 'asc' }, include: { entregas: { where: { inscricao: { turmaId: naTurma(escopo) } }, select: { status: true } } } },
       },
     });
     if (!f) throw new NotFoundException('Formacao nao encontrada.');
@@ -170,10 +188,22 @@ export class FormacoesService {
     });
   }
 
-  createTurma(tenantId: string, formacaoId: string, dto: CreateTurmaDto) {
-    return forTenant(tenantId).turma.create({
-      data: { ...dto, tenantId, formacaoId },
+  async createTurma(user: AuthUser, formacaoId: string, dto: CreateTurmaDto) {
+    const { formadorIds, ...dados } = dto;
+    const formadores = await exigirFormadores(user.tenantId, formadorIds);
+    const turma = await forTenant(user.tenantId).turma.create({
+      data: {
+        ...dados, tenantId: user.tenantId, formacaoId,
+        formadores: { create: formadores.map((userId) => ({ tenantId: user.tenantId, userId, alocadoPorId: user.id })) },
+      },
     });
+    if (formadores.length) {
+      await this.audit.record({
+        action: 'UPDATE', entity: 'turma', entityId: turma.id, tenantId: user.tenantId, userId: user.id,
+        metadata: { formadores },
+      });
+    }
+    return turma;
   }
 }
 
@@ -184,13 +214,13 @@ export class FormacoesController {
   @Get()
   @RequirePermissions('formacao:read')
   list(@CurrentUser() user: AuthUser) {
-    return this.svc.list(user.tenantId);
+    return this.svc.list(user);
   }
 
   @Get(':id')
   @RequirePermissions('formacao:read')
   detail(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.svc.detail(user.tenantId, id);
+    return this.svc.detail(user, id);
   }
 
   @Get(':id/acompanhamento')
@@ -237,7 +267,7 @@ export class FormacoesController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(createTurmaSchema)) dto: CreateTurmaDto,
   ) {
-    return this.svc.createTurma(user.tenantId, id, dto);
+    return this.svc.createTurma(user, id, dto);
   }
 }
 

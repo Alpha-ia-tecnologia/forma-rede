@@ -4,13 +4,13 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { LucideIcon } from 'lucide-react';
-import { ArrowRight, BookOpen, Building2, GraduationCap, LoaderCircle, LockKeyhole, Mail, ShieldCheck, Users } from 'lucide-react';
+import { ArrowRight, BookOpen, GraduationCap, Library, LoaderCircle, LockKeyhole, Mail, ShieldCheck, Users } from 'lucide-react';
 import { login } from '../../lib/api';
 
 // Perfis do seed (packages/db/prisma/seed.ts), todos com a mesma senha.
 const SENHA_DEMO = 'Formarede@2026';
 const PERFIS: { email: string; titulo: string; descricao: string; icon: LucideIcon; soft: string }[] = [
-  { email: 'admin.sp@formarede.gov.br', titulo: 'Entrar como gestão da rede', descricao: 'Indicadores, formações e aprovações', icon: Building2, soft: 'var(--brand-soft)' },
+  { email: 'curador.sp@formarede.gov.br', titulo: 'Entrar como curador(a)', descricao: 'Acervo, trilhas e devolutivas aos formadores', icon: Library, soft: 'var(--brand-soft)' },
   { email: 'formador.sp@formarede.gov.br', titulo: 'Entrar como formador(a)', descricao: 'Turmas, encontros e devolutivas', icon: Users, soft: 'var(--teal-soft)' },
   { email: 'prof.sp@formarede.gov.br', titulo: 'Entrar como professor(a)', descricao: 'Minhas formações e certificados', icon: BookOpen, soft: 'var(--peach-soft)' },
   { email: 'super@formarede.gov.br', titulo: 'Entrar como superadministração', descricao: 'Municípios da plataforma', icon: ShieldCheck, soft: 'var(--sage-soft)' },

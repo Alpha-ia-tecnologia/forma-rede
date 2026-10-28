@@ -1,5 +1,6 @@
 // Encontros e frequencia (RF-065..073). O formador agenda encontros por turma
-// e registra presenca em lote (upsert por inscricao).
+// e registra presenca em lote (upsert por inscricao). O formador ve e age so nas turmas
+// em que foi alocado (common/escopo); um encontro de outra turma responde 404.
 import {
   BadRequestException,
   Body,
@@ -24,14 +25,17 @@ import {
 } from '@formarede/contracts';
 import { CurrentUser, RequirePermissions } from '../../common/security';
 import { ZodValidationPipe } from '../../common/http';
+import { escopoConducao, exigirTurma, naTurma } from '../../common/escopo';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 @Injectable()
 export class EncontrosService {
-  async list(tenantId: string, turmaId?: string) {
-    const encontros = await forTenant(tenantId).encontro.findMany({
-      where: turmaId ? { turmaId } : undefined,
+  async list(user: AuthUser, turmaId?: string) {
+    const escopo = await escopoConducao(user);
+    if (escopo && turmaId && !escopo.turmas.includes(turmaId)) return [];
+    const encontros = await forTenant(user.tenantId).encontro.findMany({
+      where: { turmaId: turmaId ?? naTurma(escopo) },
       orderBy: { inicio: 'asc' },
       include: {
         modulo: true,
@@ -46,17 +50,26 @@ export class EncontrosService {
     }));
   }
 
-  create(tenantId: string, dto: CreateEncontroDto) {
+  async create(user: AuthUser, dto: CreateEncontroDto) {
     const { turmaId, moduloId, ...rest } = dto;
-    return forTenant(tenantId).encontro.create({
-      data: { ...rest, tenantId, turmaId, moduloId },
+    await exigirTurma(user, turmaId);
+    return forTenant(user.tenantId).encontro.create({
+      data: { ...rest, tenantId: user.tenantId, turmaId, moduloId },
     });
   }
 
-  /** Um encontro com turma e formacao: o contexto da tela de chamada. */
-  async detalhe(tenantId: string, id: string) {
+  /** O encontro, se for de uma turma que a pessoa conduz (404 como se nao existisse). */
+  private async encontroNoEscopo(user: AuthUser, id: string) {
     if (!UUID.test(id)) throw new NotFoundException('Encontro nao encontrado.');
-    const e = await forTenant(tenantId).encontro.findFirst({
+    const e = await forTenant(user.tenantId).encontro.findFirst({ where: { id }, select: { turmaId: true } });
+    if (!e) throw new NotFoundException('Encontro nao encontrado.');
+    await exigirTurma(user, e.turmaId, 'Encontro nao encontrado.');
+  }
+
+  /** Um encontro com turma e formacao: o contexto da tela de chamada. */
+  async detalhe(user: AuthUser, id: string) {
+    await this.encontroNoEscopo(user, id);
+    const e = await forTenant(user.tenantId).encontro.findFirst({
       where: { id },
       include: {
         modulo: { select: { titulo: true } },
@@ -69,8 +82,9 @@ export class EncontrosService {
   }
 
   /** Lista participantes da turma do encontro com a presenca ja registrada e a escola de cada um. */
-  async chamada(tenantId: string, encontroId: string) {
-    const db = forTenant(tenantId);
+  async chamada(user: AuthUser, encontroId: string) {
+    await this.encontroNoEscopo(user, encontroId);
+    const db = forTenant(user.tenantId);
     const encontro = await db.encontro.findFirst({
       where: { id: encontroId },
       include: { frequencias: true },
@@ -100,7 +114,9 @@ export class EncontrosService {
     }));
   }
 
-  async registrarFrequencia(tenantId: string, encontroId: string, dto: RegistrarFrequenciaDto) {
+  async registrarFrequencia(user: AuthUser, encontroId: string, dto: RegistrarFrequenciaDto) {
+    await this.encontroNoEscopo(user, encontroId);
+    const tenantId = user.tenantId;
     const db = forTenant(tenantId);
     const encontro = await db.encontro.findFirst({ where: { id: encontroId } });
     if (!encontro) throw new NotFoundException('Encontro nao encontrado.');
@@ -136,7 +152,7 @@ export class EncontrosController {
   @Get()
   @RequirePermissions('encontro:read')
   list(@CurrentUser() user: AuthUser, @Query('turmaId') turmaId?: string) {
-    return this.svc.list(user.tenantId, turmaId);
+    return this.svc.list(user, turmaId);
   }
 
   @Post()
@@ -145,19 +161,19 @@ export class EncontrosController {
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(createEncontroSchema)) dto: CreateEncontroDto,
   ) {
-    return this.svc.create(user.tenantId, dto);
+    return this.svc.create(user, dto);
   }
 
   @Get(':id')
   @RequirePermissions('encontro:read')
   detalhe(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.svc.detalhe(user.tenantId, id);
+    return this.svc.detalhe(user, id);
   }
 
   @Get(':id/chamada')
   @RequirePermissions('frequencia:registrar')
   chamada(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.svc.chamada(user.tenantId, id);
+    return this.svc.chamada(user, id);
   }
 
   @Post(':id/frequencia')
@@ -167,7 +183,7 @@ export class EncontrosController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(registrarFrequenciaSchema)) dto: RegistrarFrequenciaDto,
   ) {
-    return this.svc.registrarFrequencia(user.tenantId, id, dto);
+    return this.svc.registrarFrequencia(user, id, dto);
   }
 }
 

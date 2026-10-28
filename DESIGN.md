@@ -51,8 +51,8 @@ Caixa de frase em títulos, botões e selos.
   frase de apoio. **Sem rótulo acima do título** (eyebrow/kicker é proibido no piso de qualidade).
 - Início por papel: a primeira seção é a próxima ação ("Para fazer agora" / "O que precisa de você"),
   em linhas `.pend` (ícone + texto + contexto + uma ação; só a primeira é principal); indicadores da
-  rede vêm depois e só para quem acompanha a rede. Nada de número gigante como destaque. A gestão
-  (`report:read`) abre em "O que depende de você" (curadoria,
+  rede vêm depois e só para quem acompanha a rede. Nada de número gigante como destaque. A curadoria
+  (`report:read`) abre em "O que depende de você" (materiais em revisão, respostas às devolutivas,
   professores abaixo do mínimo, chamadas pendentes) e depois "Como está a rede": uma frase com o tamanho
   da rede, três quadros (desempenho, frequência por situação, entregas) e o resto em "Mais indicadores".
   Números de frequência saem da mesma conta da tela de Frequência.
@@ -110,6 +110,20 @@ Caixa de frase em títulos, botões e selos.
   `.fcell`/`.fitem`; a primeira seção responde "o que é com você agora" para o papel de quem abre.
   Estado pela forma, não só pela cor: marca vazia (pendente), cheia com visto (feito), ampulheta
   (aguardando curadoria). Detalhes de apoio ficam em `<details>` recolhido ("Sobre a formação").
+- Devolutivas da curadoria (`#devolutivas`, logo depois de "O que precisa de você"): um `.fitem` por
+  devolutiva, com título pelo tema ("Sobre a trilha"), selo de quem tem a vez ("Aguardando você" em
+  `warn`; "Aguardando a curadoria"/"quem conduz" neutro; "Resolvida" em `good`) e a conversa em blocos
+  `.devol-msg` dentro do cartão (os da curadoria em `brand-faint`). Responder abre o campo no próprio
+  item; "Responder" é principal só quando a vez é de quem lê. As resolvidas ficam num `<details>`;
+  resolver ou reabrir leva o foco ao título da seção e anuncia em `role="status"`.
+- Alocação de formadores: escolha por pílulas marcáveis (`.trilha-check` em `.aloca-opcoes`; turmas
+  agrupadas pela formação em `.aloca-grupo`). Turma sem formador leva o selo "Sem formador" (`warn`) e o
+  botão principal "Alocar formador" no próprio item; com formador, "Trocar formadores" secundário. A
+  tela Formadores abre pelas turmas sem formador (se houver), depois os formadores ("Sem turma" em
+  `warn`) e os links de cadastro: o endereço inteiro num campo só de leitura em fonte mono
+  (`.link-copia`) com "Copiar link" ao lado; o link recém-gerado tem contorno da marca (`[data-novo]`)
+  e recebe o foco; desativar pede confirmação no item. O cadastro público usa a moldura do login, com
+  as turmas do link no painel ao lado (`.cadastro-turmas`).
 - Assistente: `.assistant-fab` (pílula amarela no canto; estados por forma: anel, ponto, losango)
   e `.assistant-panel` (diálogo não modal, 420 × 680 px; tela inteira no celular). Some enquanto a barra
   da chamada está na tela (continua no menu). No celular, o fim da página tem 160 px de folga para a barra
@@ -118,7 +132,7 @@ Caixa de frase em títulos, botões e selos.
 ## Layout
 
 - `.app-frame` até 1680 px, 18 px de margem, 32 px de canto; `.nav-rail` de 224 px (rotina +
-  "Gestão da rede"); `.app-content` com 96 px no fim para o botão do Assistente.
+  "Rede municipal": formadores, escolas e relatórios); `.app-content` com 96 px no fim para o botão do Assistente.
 - Abaixo de 1024 px: barra fixa no rodapé (três destinos + Menu "Para onde você quer ir?").
 - Abaixo de 768 px: moldura cola na tela (8 px, 24 px de canto). Sem rolagem lateral a 320 px.
 

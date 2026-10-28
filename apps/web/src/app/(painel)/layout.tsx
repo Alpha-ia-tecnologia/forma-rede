@@ -11,7 +11,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import type { LucideIcon } from 'lucide-react';
 import {
   ArrowLeft, Award, BarChart3, BookOpen, CalendarDays, ClipboardCheck, GraduationCap, Home, Landmark, Layers,
-  Library, LogOut, Menu, School, Sparkles, UserCheck, X,
+  Library, LogOut, Menu, School, Sparkles, UserCheck, UsersRound, X,
 } from 'lucide-react';
 import type { AuthUser } from '@formarede/contracts';
 import { ROLE_LABELS } from '@formarede/contracts';
@@ -49,6 +49,7 @@ const NAV: ItemNav[] = [
   { href: '/assistente', label: 'Assistente IA', curto: 'Assistente', icon: Sparkles, assistente: true, ve: perm('ia:assistente') },
   { href: '/minhas-formacoes#concluidas', label: 'Meus certificados', curto: 'Certificados', icon: Award, soNoMenu: true, ve: (_u, p) => p.cursista },
   { href: '/formacoes', label: 'Formações da rede', curto: 'Rede', icon: Layers, soNoMenu: true, ve: (_u, p) => p.cursista },
+  { href: '/formadores', label: 'Formadores', curto: 'Formadores', icon: UsersRound, gestao: true, ve: perm('formador:alocar') },
   { href: '/escolas', label: 'Escolas', curto: 'Escolas', icon: School, gestao: true, ve: perm('escola:create') },
   { href: '/relatorios', label: 'Relatórios', curto: 'Relatórios', icon: BarChart3, gestao: true, ve: perm('report:read') },
   { href: '/municipios', label: 'Municípios', curto: 'Municípios', icon: Landmark, gestao: true, ve: perm('platform:admin') },
@@ -174,7 +175,7 @@ export default function PainelLayout({ children }: { children: React.ReactNode }
           <p className="rail-tenant" title={tenant?.nome}>{tenant ? `${tenant.nome} · ${tenant.uf}` : user.tenantSlug}</p>
           <nav className="rail-nav" aria-label="Navegação principal">
             {rotina.map((n) => item(n, 'rail-link'))}
-            {gestao.length > 0 && <p className="rail-group">Gestão da rede</p>}
+            {gestao.length > 0 && <p className="rail-group">Rede municipal</p>}
             {gestao.map((n) => item(n, 'rail-link'))}
           </nav>
           <div className="rail-foot">

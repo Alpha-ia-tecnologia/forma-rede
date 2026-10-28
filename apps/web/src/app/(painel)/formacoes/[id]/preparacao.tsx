@@ -10,6 +10,7 @@ import { api } from '../../../../lib/api';
 import { plural } from '../../../../lib/texto';
 import { Note } from '../../ui';
 import { Requisito } from '../../comum';
+import { EscolhaFormadores, useFormadoresRede } from '../../formadores/alocacao';
 
 interface Passo {
   chave: string;
@@ -24,7 +25,7 @@ interface Passo {
 export function PreparacaoFormacao({ formacaoId, modulos, turmas, etapasTrilha, etapasADefinir = 0, pode, aoMudar }: {
   formacaoId: string;
   modulos: number;
-  turmas: { id: string; nome: string; _count: { encontros: number } }[];
+  turmas: { id: string; nome: string; _count: { encontros: number }; formadores: { id: string; nome: string }[] }[];
   /** Etapas da trilha com recurso (null enquanto a trilha carrega). */
   etapasTrilha: number | null;
   /** Etapas de modelo ou da IA que ainda nao receberam recurso (os cursistas nao as veem). */
@@ -73,9 +74,20 @@ export function PreparacaoFormacao({ formacaoId, modulos, turmas, etapasTrilha, 
     {
       chave: 'turma', titulo: 'Turma', ok: turmas.length > 0,
       valor: turmas.length ? turmas.map((t) => t.nome).join(', ') : 'nenhuma aberta',
-      dica: turmas.length ? undefined : pode('turma:create') ? 'As inscrições dos professores entram na turma.' : 'A gestão da rede abre a turma para as inscrições.',
+      dica: turmas.length ? undefined : pode('turma:create') ? 'As inscrições dos professores entram na turma.' : 'A curadoria abre a turma para as inscrições.',
       acao: !turmas.length && pode('turma:create') && !abrindoTurma
         ? (p) => <button type="button" className={botao(p)} onClick={() => setAbrindoTurma(true)}>Abrir turma</button>
+        : null,
+    },
+    {
+      // O formador ve e conduz so as turmas em que esta: turma sem formador fica sem chamada.
+      chave: 'formador', titulo: 'Formador', ok: turmas.length > 0 && turmas.every((t) => t.formadores.length > 0),
+      valor: !turmas.length ? 'depois da turma'
+        : [...new Set(turmas.flatMap((t) => t.formadores.map((f) => f.nome)))].join(', ') || 'nenhum alocado',
+      dica: !turmas.length || turmas.every((t) => t.formadores.length) ? undefined
+        : pode('formador:alocar') ? 'Quem conduz vê só as turmas em que está.' : 'A curadoria aloca quem conduz cada turma.',
+      acao: turmas.length && pode('formador:alocar')
+        ? (p) => <a className={botao(p)} href="#turmas">Alocar formador</a>
         : null,
     },
     {
@@ -106,7 +118,8 @@ export function PreparacaoFormacao({ formacaoId, modulos, turmas, etapasTrilha, 
               {p.dica && <p className="req-detalhe">{p.dica}</p>}
               {p.acao && !p.ok && <div className="prep-acao">{p.acao(p.chave === proximo)}</div>}
               {p.chave === 'turma' && abrindoTurma && (
-                <AbrirTurma formacaoId={formacaoId} aoFechar={(abriu) => { setAbrindoTurma(false); if (abriu) aoMudar(); }} />
+                <AbrirTurma formacaoId={formacaoId} alocar={pode('formador:alocar')}
+                  aoFechar={(abriu) => { setAbrindoTurma(false); if (abriu) aoMudar(); }} />
               )}
             </Requisito>
           ))}
@@ -116,10 +129,17 @@ export function PreparacaoFormacao({ formacaoId, modulos, turmas, etapasTrilha, 
   );
 }
 
-function AbrirTurma({ formacaoId, aoFechar }: { formacaoId: string; aoFechar: (abriu: boolean) => void }) {
+function AbrirTurma({ formacaoId, alocar, aoFechar }: {
+  formacaoId: string;
+  /** formador:alocar: escolhe ja quem conduz a turma. */
+  alocar: boolean;
+  aoFechar: (abriu: boolean) => void;
+}) {
   const id = useId();
   const [nome, setNome] = useState(`Turma ${new Date().getFullYear()}.1`);
   const [vagas, setVagas] = useState('30');
+  const [formadorIds, setFormadorIds] = useState<string[]>([]);
+  const { formadores } = useFormadoresRede(alocar);
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
 
@@ -131,7 +151,7 @@ function AbrirTurma({ formacaoId, aoFechar }: { formacaoId: string; aoFechar: (a
     setErro(null);
     setOcupado(true);
     try {
-      await api.post(`/formacoes/${formacaoId}/turmas`, { nome: nome.trim(), vagas: n });
+      await api.post(`/formacoes/${formacaoId}/turmas`, { nome: nome.trim(), vagas: n, formadorIds });
       aoFechar(true);
     } catch (err) {
       setErro(err instanceof Error ? err.message : 'Não foi possível abrir a turma.');
@@ -151,6 +171,7 @@ function AbrirTurma({ formacaoId, aoFechar }: { formacaoId: string; aoFechar: (a
           <input id={`${id}-vagas`} className="input" inputMode="numeric" value={vagas} onChange={(e) => { setVagas(e.target.value); setErro(null); }} />
         </div>
       </div>
+      {alocar && <EscolhaFormadores formadores={formadores} marcados={formadorIds} aoMudar={setFormadorIds} legenda="Quem conduz a turma (opcional)" />}
       {erro && <Note tom="danger">{erro}</Note>}
       <div className="fform-acoes">
         <button type="submit" className="btn btn-primary" disabled={ocupado}>{ocupado ? 'Abrindo...' : 'Abrir a turma'}</button>

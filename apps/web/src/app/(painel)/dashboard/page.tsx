@@ -3,16 +3,18 @@
 // - Cursista: "Para fazer agora" (ajuste pedido, entrega, pesquisa, trilha, certificado),
 //   o proximo encontro e as proprias formacoes, com a mesma conta da pagina da formacao.
 // - Quem conduz: "O que precisa de voce" (chamada de hoje e pendentes, entregas por
-//   atividade, curadoria) e os proximos encontros. Cada item leva ao ponto exato.
-// - Quem acompanha a rede (report:read): "O que depende de voce" (curadoria, formacoes
-//   esperando a decisao de encerrar, professores em risco, chamadas incompletas) e depois
-//   "Como esta a rede", com os numeros da mesma fonte da tela de Frequencia.
+//   atividade, devolutivas da curadoria, curadoria) e os proximos encontros. Cada item
+//   leva ao ponto exato.
+// - A curadoria e a gestao da rede (report:read): "O que depende de voce" (materiais em
+//   revisao, turmas sem formador, respostas as devolutivas, professores em risco, chamadas
+//   incompletas) e depois "Como esta a rede", com os numeros da mesma fonte da tela de
+//   Frequencia.
 import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import type { LucideIcon } from 'lucide-react';
-import { Award, Check, ClipboardCheck, ClipboardList, Hourglass, Layers, Library, MessageSquareText, PenLine, Route, Send, UserRoundX } from 'lucide-react';
+import { Award, Check, ClipboardCheck, ClipboardList, Hourglass, Layers, Library, MessageSquareText, MessagesSquare, PenLine, Route, Send, UserRoundX, UsersRound } from 'lucide-react';
 import { formacaoEncerrada } from '@formarede/contracts';
-import type { AcompanhamentoFrequencia, AuthUser, EtapaFluxo, FormacaoRef, MinhaFormacao, PainelConducao, PlanoAprovado, TrilhaFormacao } from '@formarede/contracts';
+import type { AcompanhamentoFrequencia, AuthUser, DevolutivasPendentes, EtapaFluxo, FormacaoRef, MinhaFormacao, PainelConducao, PlanoAprovado, TrilhaFormacao, TurmaAlocacao } from '@formarede/contracts';
 import { api, getUser } from '../../../lib/api';
 import { fmtData, fmtDia, fmtHora, prazoEncerrado, quando } from '../../../lib/datas';
 import { plural } from '../../../lib/texto';
@@ -90,6 +92,32 @@ function usePlanosSemModulos(user: AuthUser | null): FormacaoRef[] {
     return () => { vivo = false; };
   }, [ativo]);
   return lista;
+}
+
+// ---------- Devolutivas da curadoria esperando resposta ----------
+
+/** Devolutivas abertas em que a vez e do usuario: quem conduz responde; a curadoria le as respostas. */
+function useDevolutivasPendentes(user: AuthUser | null): DevolutivasPendentes[] {
+  const ativo = pode(user, 'devolutiva:responder');
+  const [lista, setLista] = useState<DevolutivasPendentes[]>([]);
+  useEffect(() => {
+    if (!ativo) return;
+    let vivo = true;
+    api.get<DevolutivasPendentes[]>('/devolutivas/pendentes').then((l) => { if (vivo) setLista(l); }).catch(() => undefined);
+    return () => { vivo = false; };
+  }, [ativo]);
+  return lista;
+}
+
+function tarefasDevolutiva(lista: DevolutivasPendentes[], daCuradoria: boolean, prioridade: number): Tarefa[] {
+  return lista.map((d) => ({
+    chave: `devolutiva-${d.formacao.id}`, prioridade, icone: MessagesSquare,
+    texto: daCuradoria
+      ? <>Quem conduz respondeu a <strong>{plural(d.quantidade, 'devolutiva', 'devolutivas')}</strong> da curadoria.</>
+      : <>A curadoria deixou <strong>{plural(d.quantidade, 'devolutiva', 'devolutivas')}</strong> para você responder.</>,
+    contexto: d.formacao.titulo,
+    acao: { href: `/formacoes/${d.formacao.id}#devolutivas`, rotulo: daCuradoria ? 'Ler as respostas' : 'Responder' },
+  }));
 }
 
 function tarefasPlano(planos: FormacaoRef[]): Tarefa[] {
@@ -275,6 +303,7 @@ function ResumoFormacao({ m }: { m: MinhaFormacao }) {
 
 function InicioConducao() {
   const planos = usePlanosSemModulos(getUser());
+  const devolutivas = useDevolutivasPendentes(getUser());
   const [p, setP] = useState<PainelConducao | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   useEffect(() => {
@@ -284,6 +313,23 @@ function InicioConducao() {
 
   if (erro) return <Note tom="danger">{erro}</Note>;
   if (!p) return <ListSkeleton linhas={2} altura={160} />;
+  // Formador sem turma: ainda nao ha o que conduzir (ele ve so as turmas em que foi alocado).
+  if (p.semTurmas) {
+    return (
+      <section className="fsec" aria-labelledby="sem-turmas">
+        <div className="fsec-head">
+          <div>
+            <h2 id="sem-turmas" className="section-title">Você ainda não está em nenhuma turma</h2>
+            <p className="fsec-lead">A curadoria aloca você nas turmas que vai conduzir.</p>
+          </div>
+        </div>
+        <p className="fsec-vazio">
+          Assim que isso acontecer, a chamada, as entregas e os encontros dessas turmas aparecem aqui, e as formações
+          delas ficam em Formações.
+        </p>
+      </section>
+    );
+  }
 
   const tarefas: Tarefa[] = [];
   for (const e of p.hoje ?? []) {
@@ -322,6 +368,7 @@ function InicioConducao() {
       acao: { href: `/formacoes/${c.formacao.id}#trilha`, rotulo: 'Ver na trilha' },
     });
   }
+  tarefas.push(...tarefasDevolutiva(devolutivas, false, 2));
   tarefas.push(...tarefasPlano(planos));
   tarefas.sort((a, b) => a.prioridade - b.prioridade);
 
@@ -373,15 +420,19 @@ function InicioGestao({ user, tenantNome }: { user: AuthUser; tenantNome: string
   const [freq, setFreq] = useState<AcompanhamentoFrequencia | null | undefined>(veFrequencia ? undefined : null);
   const [materiais, setMateriais] = useState<MaterialStatus[] | null | undefined>(curadoria ? undefined : null);
   const [formacoes, setFormacoes] = useState<FormacaoEtapa[] | null | undefined>(undefined);
+  const alocar = pode(user, 'formador:alocar');
+  const [turmas, setTurmas] = useState<TurmaAlocacao[] | null | undefined>(alocar ? undefined : null);
   const planos = usePlanosSemModulos(user);
+  const devolutivas = useDevolutivasPendentes(user);
 
   useEffect(() => {
     if (veFrequencia) api.get<AcompanhamentoFrequencia>('/frequencia/professores').then(setFreq).catch(() => setFreq(null));
     if (curadoria) api.get<MaterialStatus[]>('/materiais').then(setMateriais).catch(() => setMateriais(null));
     api.get<FormacaoEtapa[]>('/formacoes').then(setFormacoes).catch(() => setFormacoes(null));
-  }, [veFrequencia, curadoria]);
+    if (alocar) api.get<TurmaAlocacao[]>('/turmas').then(setTurmas).catch(() => setTurmas(null));
+  }, [veFrequencia, curadoria, alocar]);
 
-  const carregando = freq === undefined || materiais === undefined || formacoes === undefined;
+  const carregando = freq === undefined || materiais === undefined || formacoes === undefined || turmas === undefined;
   const tarefas: Tarefa[] = [];
   const emRevisao = materiais?.filter((m) => m.status === 'EM_REVISAO').length ?? 0;
   if (emRevisao) {
@@ -389,6 +440,17 @@ function InicioGestao({ user, tenantNome }: { user: AuthUser; tenantNome: string
       chave: 'curadoria', prioridade: 1, icone: Library,
       texto: <><strong>{plural(emRevisao, 'material espera', 'materiais esperam')}</strong> a sua revisão; só os aprovados chegam às formações e à IA.</>,
       acao: { href: '/materiais', rotulo: 'Revisar materiais' },
+    });
+  }
+  // Turma sem formador: ninguem a conduz (o formador ve so as turmas em que esta).
+  const semFormador = (turmas ?? []).filter((t) => !t.encerrada && !t.formadores.length);
+  if (semFormador.length) {
+    const uma = semFormador.length === 1 ? semFormador[0] : null;
+    tarefas.push({
+      chave: 'sem-formador', prioridade: 1, icone: UsersRound, alerta: true,
+      texto: <><strong>{plural(semFormador.length, 'turma está', 'turmas estão')} sem formador</strong>: ninguém faz a chamada nem dá devolutiva {uma ? 'nela' : 'nelas'}.</>,
+      contexto: uma ? `${uma.nome} · ${uma.formacao.titulo}` : undefined,
+      acao: uma ? { href: `/formacoes/${uma.formacao.id}#turmas`, rotulo: 'Alocar formador' } : { href: '/formadores#sem-formador', rotulo: 'Alocar formadores' },
     });
   }
   const r = freq?.resumo;
@@ -400,6 +462,7 @@ function InicioGestao({ user, tenantNome }: { user: AuthUser; tenantNome: string
       acao: { href: '/frequencia', rotulo: 'Ver quem são' },
     });
   }
+  tarefas.push(...tarefasDevolutiva(devolutivas, pode(user, 'devolutiva:criar'), 1));
   tarefas.push(...tarefasPlano(planos));
   const pendentes = freq?.chamadasPendentes.length ?? 0;
   if (pendentes) {
@@ -422,7 +485,7 @@ function InicioGestao({ user, tenantNome }: { user: AuthUser; tenantNome: string
         </div>
         <div className="fcell">
           {carregando ? <ListSkeleton linhas={2} altura={56} />
-            : <ListaTarefas tarefas={tarefas} max={5} vazio="Nada esperando a sua decisão: curadoria em dia, nenhuma formação para encerrar e ninguém abaixo do mínimo." />}
+            : <ListaTarefas tarefas={tarefas} max={5} vazio="Nada esperando a sua decisão: curadoria em dia, toda turma com formador e ninguém abaixo do mínimo." />}
         </div>
       </section>
       <PainelRede user={user} tenantNome={tenantNome} frequencia={freq ?? null} formacoes={formacoes ?? []} />

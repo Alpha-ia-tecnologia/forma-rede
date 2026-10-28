@@ -14,12 +14,13 @@ import {
   type FerramentasAssistente,
 } from '@formarede/ai';
 import {
-  AuthUser, ConversaDetalhe, ConversaResumo, CriarConversaDto, criarConversaSchema,
+  AuthUser, conduzSoTurmasAlocadas, ConversaDetalhe, ConversaResumo, CriarConversaDto, criarConversaSchema,
   EnviarMensagemAssistenteDto, enviarMensagemAssistenteSchema, EventoAssistenteStream,
   FonteAssistente, Planejamento, ROLE_LABELS, TurnoAssistente,
 } from '@formarede/contracts';
 import { CurrentUser, RequirePermissions } from '../../common/security';
 import { ZodValidationPipe } from '../../common/http';
+import { exigirFormacao } from '../../common/escopo';
 
 const TITULO_PADRAO = 'Nova conversa';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -94,6 +95,7 @@ export class AssistenteService {
     if (dto.formacaoId && !(await db.formacao.findFirst({ where: { id: dto.formacaoId }, select: { id: true } }))) {
       throw new NotFoundException('Formação não encontrada.');
     }
+    if (dto.formacaoId) await exigirFormacao(user, dto.formacaoId);
     const c = await db.assistenteConversa.create({
       data: {
         tenantId: user.tenantId, userId: user.id, formacaoId: dto.formacaoId ?? null,
@@ -202,10 +204,14 @@ export class AssistenteService {
   /** Dados que o agente pode ler, no escopo do municipio (RLS) e do usuario. */
   private ferramentas(user: AuthUser): FerramentasAssistente {
     const db = forTenant(user.tenantId);
-    // Professor ve, na listagem, as formacoes em que esta inscrito.
+    // Professor ve, na listagem, as formacoes em que esta inscrito; o formador, so le as
+    // formacoes em que foi alocado (common/escopo).
+    const soAlocadas: Prisma.FormacaoWhereInput = conduzSoTurmasAlocadas(user.role)
+      ? { turmas: { some: { formadores: { some: { userId: user.id } } } } }
+      : {};
     const escopoFormacao: Prisma.FormacaoWhereInput = user.role === 'PROFESSOR'
       ? { turmas: { some: { inscricoes: { some: { userId: user.id } } } } }
-      : {};
+      : soAlocadas;
     return {
       listarFormacoes: async () => {
         const formacoes = await db.formacao.findMany({
@@ -219,7 +225,7 @@ export class AssistenteService {
       consultarFormacao: async (id) => {
         if (!UUID.test(id)) return null;
         const f = await db.formacao.findFirst({
-          where: { id },
+          where: { id, ...soAlocadas },
           include: {
             modulos: { orderBy: { ordem: 'asc' }, select: { titulo: true, descricao: true } },
             atividades: { select: { titulo: true, descricao: true, criterios: true, prazo: true } },

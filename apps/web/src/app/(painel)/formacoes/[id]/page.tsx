@@ -1,8 +1,9 @@
 'use client';
 // Pagina da formacao. Duas visoes sobre a mesma trilha:
 // - cursista: o que falta para o certificado, a trilha, as proprias atividades e encontros;
-// - quem conduz: o que precisa de atencao agora, o plano formativo (Copiloto), a trilha,
-//   a fila de entregas e as chamadas.
+// - quem conduz: o que precisa de atencao agora, as devolutivas da curadoria, as turmas e
+//   quem conduz cada uma (curadoria), o plano formativo (Copiloto), a trilha, a fila de
+//   entregas e as chamadas. O formador ve so as turmas em que foi alocado.
 // O resto (modulos, outros materiais) fica recolhido em "Sobre a formacao".
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
@@ -19,6 +20,8 @@ import { AtencaoConducao, AtividadesConducao, EncontrosConducao } from './conduc
 import { EncerramentoFormacao, type Transicao } from './processo';
 import { PlanoFormativo } from './plano';
 import { PreparacaoFormacao } from './preparacao';
+import { DevolutivasFormacao } from './devolutivas';
+import { TurmasFormadores, type TurmaComFormadores } from './turmas';
 
 interface Detalhe {
   id: string;
@@ -31,7 +34,8 @@ interface Detalhe {
   etapaFluxo: EtapaFluxo;
   freqMinimaPct: number;
   modulos: { id: string; titulo: string; ordem: number }[];
-  turmas: { id: string; nome: string; vagas: number; _count: { inscricoes: number; encontros: number } }[];
+  /** O formador recebe so as turmas em que foi alocado. */
+  turmas: TurmaComFormadores[];
   materiais: { id: string; material: { id: string; titulo: string; tipo: string; status: string } }[];
   atividades: { id: string; titulo: string; prazo?: string | null; pontuacao: number }[];
   transicoes: Transicao[];
@@ -153,6 +157,8 @@ export default function FormacaoDetalhePage() {
             <AtencaoConducao a={acomp} pendentesCuradoria={pendentesCuradoria} podeRegistrar={pode('frequencia:registrar')} aoAvaliar={avaliar}
               encerrada={encerrada} />
           ) : erroAcomp ? <Note tom="danger">{erroAcomp}</Note> : <ListSkeleton linhas={1} altura={200} />}
+          {pode('devolutiva:responder') && <DevolutivasFormacao formacaoId={id} daCuradoria={pode('devolutiva:criar')} />}
+          {pode('formador:alocar') && <TurmasFormadores turmas={f.turmas} aoMudar={carregarDetalhe} />}
           {pode('ia:usar') && (
             <PlanoFormativo formacaoId={id} modulos={f.modulos.length} podeCriarModulos={pode('modulo:create')} aoCriarModulos={carregarDetalhe}
               ocultarVazio={emPreparacao} />

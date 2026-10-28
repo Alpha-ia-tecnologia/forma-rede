@@ -1138,6 +1138,39 @@ a.formacao-nova > .course-card { box-shadow: 0 0 0 2px var(--brand); }
 .fitem-sub { color: var(--ink-soft); }
 .fitem-envio summary { width: fit-content; cursor: pointer; color: var(--brand-strong); font-size: var(--text-sm); font-weight: 500; }
 .fitem-envio p { margin: 8px 0; max-width: 72ch; font-size: var(--text-sm); line-height: 1.6; white-space: pre-wrap; }
+
+/* Devolutivas da curadoria: a conversa fica no cartao, cada resposta num bloco de papel
+   (as da curadoria no tom da marca, para ver de relance quem falou por ultimo). */
+.devol-texto { white-space: pre-wrap; overflow-wrap: anywhere; }
+.devol-conversa { display: grid; gap: var(--space-2); margin: var(--space-1) 0 0; padding: 0; list-style: none; }
+.devol-msg { display: grid; gap: var(--space-1); padding: 10px 14px; border-radius: var(--radius-xl); background: var(--paper); }
+.devol-msg[data-lado='curadoria'] { background: var(--brand-faint); }
+.devol-msg p { margin: 0; max-width: 66ch; font-size: var(--text-sm); line-height: 1.6; }
+.devol-msg .devol-msg-autor { color: var(--ink-soft); font-size: var(--text-xs); }
+.devol-msg-autor strong { color: var(--ink); font-weight: 600; }
+.devol-resolvidas { margin-top: var(--space-4); }
+.devol-resolvidas > summary { width: fit-content; margin-bottom: var(--space-3); cursor: pointer; color: var(--brand-strong); font-size: var(--text-sm); font-weight: 500; }
+
+/* Alocacao de formadores: escolha por pilulas (.trilha-check), turmas agrupadas pela formacao. */
+.aloca-opcoes { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.aloca-grupos { display: grid; gap: var(--space-3); }
+.aloca-grupo { display: grid; gap: var(--space-1-5); }
+.aloca-grupo-titulo { margin: 0; color: var(--ink-soft); font-size: var(--text-xs); font-weight: 600; }
+.aloca-vazio { margin: 0; }
+
+/* Link de cadastro: o endereco inteiro num campo so de leitura e o copiar ao lado. */
+.link-copia { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.link-copia .input { flex: 1 1 280px; min-width: 0; font-family: var(--font-mono); font-size: var(--text-xs); }
+.fitem[data-novo] { box-shadow: 0 0 0 2px var(--brand); }
+
+/* Cadastro de formador: as turmas do link no painel ao lado do formulario. */
+.cadastro-turmas { display: grid; gap: var(--space-3); }
+.cadastro-turmas h3 { margin: 0; font-size: var(--text-sm); font-weight: 600; }
+.cadastro-turmas ul { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.cadastro-turmas li { display: grid; gap: 2px; padding: 12px 14px; border-radius: var(--radius-xl); background: var(--paper-raised); font-size: var(--text-sm); }
+.cadastro-turmas li span { color: var(--ink-soft); font-size: var(--text-xs); }
+.cadastro-turmas p { margin: 0; color: var(--ink-soft); font-size: var(--text-sm); line-height: 1.55; }
+.cadastro-turmas .cadastro-validade { font-size: var(--text-xs); }
 .devolutiva { padding: 12px 14px; border-radius: var(--radius-xl); background: var(--surface-muted); font-size: var(--text-sm); }
 .devolutiva[data-ajuste='true'] { background: var(--amber-soft); }
 .devolutiva p { margin: 0; max-width: 72ch; line-height: 1.55; }

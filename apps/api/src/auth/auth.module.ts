@@ -14,5 +14,7 @@ import { jwtSecret } from './jwt-secret';
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],
+  // O cadastro pelo link de formador entra logado (FormadoresModule).
+  exports: [AuthService],
 })
 export class AuthModule {}

@@ -148,7 +148,7 @@ function Exportacao({ titulo, descricao, rota, pode }: { titulo: string; descric
         <p className="fitem-texto">{descricao}</p>
         {estado === 'feito' && <p className="hint" role="status">Arquivo gerado; confira a pasta de downloads.</p>}
         {erro && <p className="campo-erro" role="alert">{erro}</p>}
-        {!pode && <p className="hint">Exportar pede a permissão de relatórios; fale com a gestão da rede.</p>}
+        {!pode && <p className="hint">Exportar pede a permissão de relatórios; fale com a curadoria.</p>}
       </div>
       {pode && (
         <button type="button" className="btn btn-secondary" disabled={estado === 'baixando'} onClick={exportar}>
